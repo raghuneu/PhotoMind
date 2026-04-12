@@ -2,6 +2,8 @@
 
 A multimodal personal photo knowledge retrieval system built with CrewAI. Turns your phone's photo library into a queryable knowledge base — ask natural-language questions, get answers with confidence scores and source attribution.
 
+[![Demo Video](Photomind.png)](https://youtu.be/wcw8_X2_HGE)
+
 ## What It Does
 
 PhotoMind uses GPT-4o Vision to analyze personal photos (bills, receipts, food photos, screenshots, documents) and builds a searchable JSON knowledge base. Three query modes:
