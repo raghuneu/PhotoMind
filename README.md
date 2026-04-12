@@ -203,16 +203,14 @@ PhotoMind/
 │       └── feedback_store.py        # FeedbackStore (adaptive threshold learning)
 ├── eval/
 │   ├── test_cases.py                # 20 hand-labeled test queries
-│   ├── run_evaluation.py            # Metrics harness
-│   └── results/
-│       └── eval_results.json        # Latest eval output
-├── knowledge_base/
-│   └── photo_index.json             # Generated — 25 photos indexed
-├── photos/                          # Your images (JPG, PNG, HEIC)
-├── requirements.txt
+│   └── run_evaluation.py            # Metrics harness
 ├── .env.example
+├── .gitignore
+├── LICENSE
+├── Photomind.png                    # Demo video thumbnail
+├── requirements.txt
 ├── TECHNICAL_REPORT.md              # Full technical documentation
-└── PROJECT_RETROSPECTIVE.md         # Issue log with root causes and fixes
+└── TECHNICAL_REPORT.pdf             # Technical report (PDF)
 ```
 
 ## Known Limitations
