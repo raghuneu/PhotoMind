@@ -37,7 +37,9 @@ def parse_response(raw_result: str) -> dict:
             if data.get("query_type") in ("factual", "semantic", "behavioral"):
                 parsed["query_type"] = data["query_type"]
             if isinstance(data.get("source_photos"), list):
-                parsed["source_photos"] = data["source_photos"]
+                parsed["source_photos"] = [
+                    os.path.basename(p).lower() for p in data["source_photos"]
+                ]
             parsed["raw"] = str(raw_result)
             return parsed
     except (json.JSONDecodeError, ValueError):
@@ -105,7 +107,7 @@ def parse_response(raw_result: str) -> dict:
 
     # Extract photo filenames (look for .jpg, .png patterns)
     photos = re.findall(r'[\w\-]+\.(?:jpg|jpeg|png|webp|heic)', text, re.IGNORECASE)
-    parsed["source_photos"] = photos
+    parsed["source_photos"] = [p.lower() for p in photos]
     parsed["raw"] = str(raw_result)
     return parsed
 

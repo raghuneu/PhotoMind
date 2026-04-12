@@ -246,7 +246,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
                     score += 0.4
                     evidence_parts.append(f"{etype}: {entity['value']}")
                 # Boost if entity type matches query context
-                if etype in q:
+                if etype in q.split():
                     score += 0.1
                     evidence_parts.append(f"{etype}: {entity['value']}")
 
@@ -427,7 +427,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
                     break
 
             # Behavioral aggregation always has some baseline value
-            score = max(score, 0.3)
+            score = max(score, 0.1)
             score = min(score, 1.0)
 
             results.append({
