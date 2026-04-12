@@ -1,0 +1,1 @@
+# PhotoMind - Crew definitions

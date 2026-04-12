@@ -1,0 +1,1 @@
+# PhotoMind - Agent definitions

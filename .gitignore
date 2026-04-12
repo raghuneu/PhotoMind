@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# PhotoMind
+knowledge_base/photo_index.json
+eval/results/
+.DS_Store
+
+dashboard/frontend/node_modules/
+photos/
