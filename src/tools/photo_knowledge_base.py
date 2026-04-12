@@ -37,6 +37,15 @@ def _clean(text: str) -> str:
     return re.sub(r'[^\w\s]', '', text.lower())
 
 
+# Stop words that should not contribute to relevance scoring
+_STOP_WORDS = frozenset({
+    "what", "when", "where", "which", "this", "that", "with", "from",
+    "have", "been", "were", "your", "does", "will", "would", "could",
+    "should", "about", "their", "there", "these", "those", "much",
+    "many", "some", "than", "them", "then", "they", "into", "each",
+})
+
+
 class PhotoKBQueryInput(BaseModel):
     """Input schema for PhotoMind Knowledge Base queries."""
 
@@ -124,6 +133,11 @@ class PhotoKnowledgeBaseTool(BaseTool):
             except Exception:
                 pass  # Feedback store is optional; gracefully degrade
 
+            # Detect aggregation queries that need all matches
+            q_clean = _clean(query)
+            aggregation_keywords = ["total", "how much", "spend", "spent", "all", "sum"]
+            is_aggregation = any(kw in q_clean for kw in aggregation_keywords)
+
             # Route to appropriate search strategy
             if query_type == "factual":
                 results = self._factual_search(query, kb, top_k)
@@ -135,12 +149,19 @@ class PhotoKnowledgeBaseTool(BaseTool):
             # Filter by confidence threshold
             filtered = [r for r in results if r["relevance_score"] >= confidence_threshold]
 
+            # For aggregation queries, keep all results; otherwise limit to top_k
+            output_results = filtered if is_aggregation else filtered[:top_k]
+
             # Calculate confidence grade
-            if not filtered:
+            if not output_results:
                 grade, score = "F", 0.0
-                warning = "No results met the confidence threshold. Try a more specific query."
+                warning = (
+                    "NO MATCHING PHOTOS FOUND. The knowledge base does not contain "
+                    "information related to this query. You MUST decline to answer "
+                    "and report confidence_grade F with an empty source_photos list."
+                )
             else:
-                score = filtered[0]["relevance_score"]
+                score = output_results[0]["relevance_score"]
                 grade = self._score_to_grade(score)
                 warning = None
                 if grade in ("D", "F"):
@@ -148,11 +169,11 @@ class PhotoKnowledgeBaseTool(BaseTool):
 
             response = {
                 "query_type_detected": query_type,
-                "results": filtered[:top_k],
+                "results": output_results,
                 "confidence_grade": grade,
                 "confidence_score": round(score, 3),
-                "answer_summary": self._generate_summary(query, filtered[:top_k]),
-                "source_photos": [r["photo_path"] for r in filtered[:top_k]],
+                "answer_summary": self._generate_summary(query, output_results),
+                "source_photos": [r["photo_path"] for r in output_results],
                 "warning": warning,
                 "strategy_accuracy": strategy_accuracy,
             }
@@ -229,10 +250,13 @@ class PhotoKnowledgeBaseTool(BaseTool):
                     score += 0.1
                     evidence_parts.append(f"{etype}: {entity['value']}")
 
-            # Match against OCR text
+            # Match against OCR text (exclude stop words)
             ocr_text = _clean(photo.get("ocr_text", ""))
             if ocr_text:
-                matching = sum(1 for w in words if w in ocr_text and len(w) > 3)
+                matching = sum(
+                    1 for w in words
+                    if w in ocr_text and len(w) > 3 and w not in _STOP_WORDS
+                )
                 word_score = min(matching * 0.15, 0.5)
                 score += word_score
                 if word_score > 0:
@@ -246,6 +270,15 @@ class PhotoKnowledgeBaseTool(BaseTool):
             if score > 0:
                 # Deduplicate evidence
                 evidence_parts = list(dict.fromkeys(evidence_parts))
+
+                # Include all amount entities so the LLM can compute totals
+                amounts = [
+                    e["value"] for e in photo.get("entities", [])
+                    if e.get("type", "").lower() == "amount"
+                ]
+                if amounts:
+                    evidence_parts.append(f"amounts: {', '.join(amounts)}")
+
                 results.append({
                     "photo_id": photo["id"],
                     "photo_path": photo["file_path"],
@@ -255,7 +288,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 })
 
         results.sort(key=lambda x: x["relevance_score"], reverse=True)
-        return results[:top_k]
+        return results
 
     def _semantic_search(self, query: str, kb: dict, top_k: int) -> list:
         """Search descriptions and captions for semantic matches."""
@@ -429,9 +462,25 @@ class PhotoKnowledgeBaseTool(BaseTool):
         if not results:
             return "No matching photos found in the knowledge base."
         top = results[0]
-        return (
+        summary = (
             f"Best match: {top['photo_path']} "
             f"(type: {top['image_type']}, "
             f"confidence: {self._score_to_grade(top['relevance_score'])}). "
             f"Evidence: {top['evidence']}"
         )
+
+        # For multiple results with amounts, compute and append a total
+        all_amounts = []
+        for r in results:
+            for part in r.get("evidence", "").split("; "):
+                if part.startswith("amounts: "):
+                    for val in part[len("amounts: "):].split(", "):
+                        cleaned = re.sub(r'[^\d.\-]', '', val)
+                        try:
+                            all_amounts.append(float(cleaned))
+                        except ValueError:
+                            pass
+        if len(all_amounts) > 1:
+            summary += f" | Aggregated total across {len(results)} receipts: ${sum(all_amounts):.2f}"
+
+        return summary

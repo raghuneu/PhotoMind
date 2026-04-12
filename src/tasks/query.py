@@ -2,6 +2,9 @@
 
 from crewai import Task
 
+from src.tools.photo_knowledge_base import PhotoKnowledgeBaseTool
+from src.config import settings
+
 
 def create_query_task(knowledge_retriever) -> Task:
     """Search the knowledge base for evidence relevant to the user's query."""
@@ -16,7 +19,10 @@ def create_query_task(knowledge_retriever) -> Task:
             "4. ALWAYS include the confidence_grade from the tool output\n"
             "5. ALWAYS include the specific source photo filenames\n\n"
             "IMPORTANT: Return the retrieval results faithfully. Do not fabricate "
-            "information not found in the knowledge base."
+            "information not found in the knowledge base.\n"
+            "IMPORTANT: If the tool returns zero results or grade F, return exactly "
+            "that. Do NOT attempt additional searches. The absence of a result IS "
+            "the answer — the knowledge base does not contain this information."
         ),
         expected_output=(
             "The raw retrieval results including:\n"
@@ -26,6 +32,7 @@ def create_query_task(knowledge_retriever) -> Task:
             "- query_type: factual/semantic/behavioral (as detected by the tool)"
         ),
         agent=knowledge_retriever,
+        tools=[PhotoKnowledgeBaseTool(knowledge_base_path=settings.knowledge_base_path)],
     )
 
 
@@ -42,8 +49,10 @@ def create_synthesize_task(insight_synthesizer, query_task) -> Task:
             "3. Assign a final confidence_grade (A, B, C, D, or F) based on "
             "evidence strength\n"
             "4. Cite every source photo filename explicitly\n"
-            "5. If the evidence is insufficient (D/F grade), clearly state this "
-            "and do NOT fabricate an answer\n"
+            "5. If the evidence is insufficient (D/F grade) or no results were found, "
+            "clearly state that the information is not available in the photo "
+            "knowledge base. Do NOT fabricate an answer or blame encoding errors. "
+            "Set confidence_grade to 'F' and provide an honest explanation\n"
             "6. For behavioral queries, summarize the pattern with statistics\n"
             "7. If available, use web search to add relevant context, but the "
             "core answer must come from the user's photos\n\n"

@@ -34,7 +34,7 @@ PhotoMind turns a personal photo library into a queryable knowledge base. The sy
 - Gracefully decline queries the knowledge base cannot answer
 
 **Real-world use cases demonstrated:**
-- "How much did I spend at ALDI?" → finds receipt, returns $18.69 with source photo
+- "How much did I spend at ALDI?" → finds all 5 ALDI receipts, aggregates total with source photos
 - "Show me photos of pizza" → finds food photos matching the description
 - "What type of food do I photograph most?" → analyzes patterns across all 25 photos
 - "What was my electric bill?" → correctly declines (no such photo in the library)
@@ -154,10 +154,10 @@ PhotoMind uses four specialized agents across two crews.
 | Property | Value |
 |----------|-------|
 | Role | Knowledge Retriever |
-| Tools | PhotoKnowledgeBaseTool (custom), FileReadTool |
+| Tools | PhotoKnowledgeBaseTool (custom), FileReadTool, JSONSearchTool (agent-level) |
 | Process | Sequential (step 3 of ingestion), subordinate in query crew |
 
-**Responsibility:** In ingestion: writes the final knowledge base JSON file. In queries: executes the search against the knowledge base using the appropriate strategy, returns ranked results with evidence.
+**Responsibility:** In ingestion: writes the final knowledge base JSON file. In queries: executes the search against the knowledge base using the appropriate strategy, returns ranked results with evidence. Note: the query task restricts this agent to only `PhotoKnowledgeBaseTool` via task-level tool override, preventing fallback searches that produce misleading weak matches.
 
 **Backstory:** *"You are a research librarian with perfect recall. When no good match exists, you say so clearly rather than returning a weak match disguised as confident."*
 
@@ -183,13 +183,13 @@ PhotoMind uses four specialized agents across two crews.
 |------|-------|---------|---------------|
 | `DirectoryReadTool` | Photo Analyst | Scans `photos/` directory, lists all image files with extensions JPG/PNG/HEIC/WebP | `directory=settings.photos_directory` |
 | `FileReadTool` | Knowledge Retriever, Insight Synthesizer | Reads the knowledge base JSON file; Synthesizer uses it to re-read source photos for context | Default, unrestricted path |
-| `JSONSearchTool` | Knowledge Retriever | Embedding-based semantic search over the knowledge base JSON using sentence-transformers | `json_path=settings.knowledge_base_path` |
 | `SerperDevTool` | Insight Synthesizer | Optional web search enrichment — adds public context (e.g., restaurant info, product details) when a relevant Serper API key is present | Graceful fallback: not added if key missing |
+
+**Note:** `JSONSearchTool` is configured on the Knowledge Retriever agent but is **not** available during query tasks. The query task explicitly restricts the retriever to only `PhotoKnowledgeBaseTool` to prevent fallback searches that produce weak, misleading matches. This was a deliberate design choice after observing that fallback tools caused the system to return irrelevant results instead of properly declining unanswerable queries.
 
 **Tool selection rationale:**
 - `DirectoryReadTool` is the natural fit for directory enumeration — it handles recursive listing and returns structured file metadata
 - `FileReadTool` provides safe, agent-readable access to the knowledge base without exposing raw Python file I/O
-- `JSONSearchTool` complements the keyword-based `PhotoKnowledgeBaseTool` with true embedding-based semantic search, catching synonym and conceptual matches that keyword overlap misses
 - `SerperDevTool` enriches behavioral answers (e.g., "I photographed Patel Brothers 3 times" could be enriched with store location context)
 
 ### 4.2 Custom Vision Tool (`PhotoVisionTool`)
@@ -240,7 +240,7 @@ The core differentiating component of PhotoMind. Implements a three-strategy ret
       "photo_id": "uuid",
       "photo_path": "photos/IMG_1853.HEIC",
       "relevance_score": 0.55,
-      "evidence": "vendor: ALDI; amount: 18.69; OCR text match",
+      "evidence": "vendor: ALDI; OCR text match; amounts: 18.69",
       "image_type": "receipt"
     }
   ],
@@ -267,8 +267,10 @@ Query → _classify_query()
 
 **Factual Search** — Targets receipts, bills, and documents with specific extractable facts:
 1. Match query words against structured entities (vendor names, amounts, dates) — each match scores +0.4
-2. Match against OCR text (keyword frequency) — scores up to +0.5
+2. Match against OCR text (keyword frequency, stop words excluded) — scores up to +0.5
 3. Boost if image_type matches query context (+0.2)
+4. Include all amount entities in evidence (e.g., `amounts: $18.69, $2.15`) so the LLM can compute totals
+5. **Aggregation mode:** queries containing "how much", "spend", "total", etc. return all matching results instead of `top_k`, and the summary includes an aggregated total across receipts
 
 **Semantic Search** — Targets photos by visual meaning or mood:
 1. Apply `_clean()` (lowercase + strip punctuation) to both query and descriptions
@@ -327,12 +329,12 @@ The sequential process ensures each task can pass its output as `context` to the
 ```
 Manager: Controller Agent
     │
-    ├── Task 1 → Knowledge Retriever: searches KB with PhotoKnowledgeBaseTool + JSONSearchTool
+    ├── Task 1 → Knowledge Retriever: searches KB with PhotoKnowledgeBaseTool
     └── Task 2 → Insight Synthesizer: synthesizes answer with confidence grade [context: Task 1]
 ```
 
 The query pipeline uses two chained tasks:
-1. **Retrieval Task** — assigned to Knowledge Retriever, uses `PhotoKnowledgeBaseTool` (keyword-based) and `JSONSearchTool` (embedding-based) to search the knowledge base. Returns raw results with relevance scores and evidence.
+1. **Retrieval Task** — assigned to Knowledge Retriever, uses only `PhotoKnowledgeBaseTool` (task-level tool override restricts the agent to this single tool, preventing fallback searches that produce weak matches). Returns raw results with relevance scores and evidence.
 2. **Synthesis Task** — assigned to Insight Synthesizer, receives the retrieval results via `context=[query_task]`. Produces a structured JSON answer with `confidence_grade`, `source_photos`, `query_type`, and `reasoning`.
 
 Key crew settings:
@@ -405,6 +407,21 @@ This ensures the system learns from evaluation results: strategies with low accu
 
 **Problem:** Reusing one Crew instance for 20 eval queries caused CrewAI memory to accumulate ~32k tokens by query 19, exceeding the 30k TPM limit.  
 **Solution:** Instantiate a fresh Crew per query in the eval harness.
+
+### Challenge 9: Stop Words Causing False Matches in Factual Search
+
+**Problem:** `"What was my electric bill this month?"` returned grade D with irrelevant photos because stop words "what" and "this" (length > 3, passing the filter) matched against unrelated OCR text.  
+**Solution:** Added a `_STOP_WORDS` set and excluded these words from OCR text matching. Electric bill query now correctly returns grade F with zero results.
+
+### Challenge 10: Agents Ignoring Tool Decline Signals
+
+**Problem:** When `PhotoKnowledgeBaseTool` returned grade F with no results for unanswerable queries, the CrewAI agents used fallback tools (`JSONSearchTool`, `FileReadTool`) to find irrelevant weak matches and fabricated explanations like "file encoding errors."  
+**Solution:** Applied task-level tool override (`tools=[PhotoKnowledgeBaseTool(...)]`) on the query task, restricting the retriever to only the primary search tool. Combined with a directive decline message in the tool output and strengthened agent instructions.
+
+### Challenge 11: Aggregation Queries Truncated by top_k
+
+**Problem:** `"How much did I spend at ALDI?"` only returned 3 of 5 ALDI receipts due to the `top_k=3` limit, and the evidence lacked dollar amounts for the LLM to compute a total.  
+**Solution:** Added aggregation detection for queries containing "how much", "spend", "total", etc. These queries now return all matching results with amount entities included in the evidence, and the summary includes a computed aggregated total.
 
 ---
 
