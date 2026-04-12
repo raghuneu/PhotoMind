@@ -175,11 +175,11 @@ confidence_threshold: float = 0.15  # Minimum score to include
 
 | Metric | Score |
 |--------|-------|
-| Retrieval Accuracy | **85%** |
-| Routing Accuracy | **75%** |
-| Silent Failure Rate | **0%** |
+| Retrieval Accuracy | **95%** |
+| Routing Accuracy | **100%** |
+| Silent Failure Rate | **5%** |
 | Decline Accuracy | **100%** |
-| Avg Latency | 44s/query |
+| Avg Latency | ~30s/query |
 
 ## Project Structure
 
