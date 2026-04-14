@@ -703,6 +703,8 @@ The complete elimination of silent failures (0.0%, p < 0.0001) is the most impor
 
 ---
 
+*Demo video: [youtu.be/wcw8_X2_HGE](https://youtu.be/wcw8_X2_HGE)*
+*Repository: [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind)*
 *Submitted for: Building Agentic Systems Assignment (RL Final)*
 *Implementation: CrewAI 1.14.1 · GPT-4o Vision · PyTorch · Python 3.10.14*
 *RL Training: Thompson Sampling (contextual bandit) + DQN (confidence calibration)*

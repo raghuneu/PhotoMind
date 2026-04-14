@@ -163,11 +163,12 @@ python -m src.main train 1000
 # Run full RL evaluation: 4 configs x 5 seeds x 56 queries
 python -m src.main rl-eval
 
-# Run 7-config ablation study with statistical significance tests
+# Run 7-config ablation study → eval/results/ablation_results.json
 python -m src.main ablation
 ```
 
 RL training requires no API keys — it runs entirely on the cached knowledge base (zero API cost).
+Requires an existing `knowledge_base/photo_index.json` — run `python -m src.main ingest` first.
 Trained models are saved to `knowledge_base/rl_models/` and loaded automatically at query time.
 
 ## Reinforcement Learning Extension
@@ -200,7 +201,9 @@ Replaces static confidence thresholding with a DQN that learns when to accept, h
 | Baseline (Rule-Based) | 87.5% | 76.8% | 1.8% | 90.9% |
 | Full RL (Thompson+DQN) | 87.5% | 67.1% | **0.0%** | **98.2%** |
 
-Key finding: The DQN near-eliminates silent failures (Full RL: 0.0%, DQN-Only: 0.4%, vs 1.8% baseline; p < 0.0001). Decline accuracy improves significantly (Full RL: 98.2%, DQN-Only: 100.0%, p = 0.016). The bandit trades routing accuracy for silent failure reduction on ambiguous queries where the "correct" routing label is itself ambiguous. Cohen's d for silent failure is technically undefined (variance collapses to zero across seeds) — the effect is deterministic and consistent across all 5 seeds.
+Key finding: The DQN eliminates silent failures (Full RL: 0.0% vs 1.8% baseline; p < 0.0001). The bandit trades routing accuracy for silent failure reduction on ambiguous queries where the "correct" routing label is itself ambiguous.
+
+*Note: Numbers above are from the 4-config rl-eval harness. The full 7-config ablation in the technical report uses a separate run and shows slightly different values (e.g., 96.4% decline, 1.1% DQN-Only silent failure) due to the strategy_type_map correction applied before the ablation run.*
 
 ### RL Architecture
 
