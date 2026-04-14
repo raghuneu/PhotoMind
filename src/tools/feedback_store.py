@@ -107,6 +107,48 @@ class FeedbackStore:
             return stats["correct"] / stats["total"]
         return None
 
+    def record_rl_outcome(
+        self,
+        query: str,
+        query_type: str,
+        correct: bool,
+        confidence_score: float,
+        bandit_arm: int | None = None,
+        dqn_action: int | None = None,
+        bandit_reward: float | None = None,
+        dqn_reward: float | None = None,
+    ):
+        """Record a query outcome with RL-specific fields."""
+        self.data["history"].append({
+            "query": query,
+            "query_type": query_type,
+            "correct": correct,
+            "confidence_score": confidence_score,
+            "bandit_arm": bandit_arm,
+            "dqn_action": dqn_action,
+            "bandit_reward": bandit_reward,
+            "dqn_reward": dqn_reward,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        if query_type not in self.data["strategy_stats"]:
+            self.data["strategy_stats"][query_type] = {"correct": 0, "total": 0}
+        stats = self.data["strategy_stats"][query_type]
+        stats["total"] += 1
+        if correct:
+            stats["correct"] += 1
+
+        if stats["total"] >= 3:
+            accuracy = stats["correct"] / stats["total"]
+            if accuracy < 0.7:
+                self.data["confidence_adjustments"][query_type] = 0.05
+            elif accuracy >= 0.9:
+                self.data["confidence_adjustments"][query_type] = -0.05
+            else:
+                self.data["confidence_adjustments"][query_type] = 0.0
+
+        self._save()
+
     def get_summary(self) -> dict:
         """Return a summary of feedback data for agent context."""
         summary = {}

@@ -119,9 +119,9 @@ class PhotoKnowledgeBaseTool(BaseTool):
                     "confidence_score": 0.0,
                 })
 
-            # Auto-classify query type if needed
+            # Auto-classify query type: try RL bandit first, fall back to rules
             if query_type == "auto":
-                query_type = self._classify_query(query)
+                query_type = self._rl_classify_query(query) or self._classify_query(query)
 
             # Apply feedback-based confidence threshold adjustment
             strategy_accuracy = None
@@ -162,7 +162,8 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 )
             else:
                 score = output_results[0]["relevance_score"]
-                grade = self._score_to_grade(score)
+                dqn_grade = self._rl_confidence_grade(output_results, query_type, query)
+                grade = dqn_grade if dqn_grade is not None else self._score_to_grade(score)
                 warning = None
                 if grade in ("D", "F"):
                     warning = "Low confidence results. Please verify against source photos."
@@ -191,6 +192,45 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 "confidence_grade": "F",
                 "confidence_score": 0.0,
             })
+
+    # ── RL-Powered Query Routing ────────────────────────────────────────
+
+    def _rl_classify_query(self, query: str) -> str | None:
+        """Use trained contextual bandit for query routing. Returns None on failure."""
+        try:
+            from src.rl.contextual_bandit import load_trained_bandit
+            from src.rl.feature_extractor import QueryFeatureExtractor
+            from src.rl.rl_config import ARM_NAMES, BANDIT_MODEL_PATH
+
+            bandit = load_trained_bandit(BANDIT_MODEL_PATH)
+            if bandit is None:
+                return None
+            extractor = QueryFeatureExtractor(self.knowledge_base_path)
+            features = extractor.extract(query)
+            arm = bandit.select_arm(features)
+            return ARM_NAMES[arm]
+        except Exception:
+            return None
+
+    def _rl_confidence_grade(self, results: list, strategy: str, query: str) -> str | None:
+        """Use trained DQN for confidence grading. Returns None on failure."""
+        try:
+            from src.rl.dqn_confidence import load_trained_dqn, ConfidenceState, action_to_grade
+            from src.rl.feature_extractor import QueryFeatureExtractor
+            from src.rl.rl_config import ARM_NAMES, DQN_MODEL_PATH
+
+            agent = load_trained_dqn(DQN_MODEL_PATH)
+            if agent is None:
+                return None
+            extractor = QueryFeatureExtractor(self.knowledge_base_path)
+            features = extractor.extract(query)
+            strategy_idx = ARM_NAMES.index(strategy) if strategy in ARM_NAMES else 1
+            state = ConfidenceState.from_retrieval(results, strategy_idx, features)
+            action = agent.select_action(state)
+            score = results[0]["relevance_score"] if results else 0.0
+            return action_to_grade(action, score)
+        except Exception:
+            return None
 
     # ── Query Intent Classification ──────────────────────────────────────
 
