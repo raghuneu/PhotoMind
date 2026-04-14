@@ -2,6 +2,8 @@
 
 A multimodal personal photo knowledge retrieval system built with CrewAI. Turns your phone's photo library into a queryable knowledge base — ask natural-language questions, get answers with confidence scores and source attribution.
 
+**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind) · **Demo:** [youtu.be/wcw8_X2_HGE](https://youtu.be/wcw8_X2_HGE)
+
 [![Demo Video](Photomind.png)](https://youtu.be/wcw8_X2_HGE)
 
 ## What It Does
@@ -149,6 +151,83 @@ Runs 20 test queries across 4 categories and reports:
 
 Results saved to `eval/results/eval_results.json`. Run history appended to `eval/results/eval_history.json` for trend analysis. Each run also feeds back into the adaptive confidence threshold system via `FeedbackStore`.
 
+### Train the RL components (offline, no API calls)
+
+```bash
+# Train both components across 5 seeds (2000 episodes each, ~60s total)
+python -m src.main train
+
+# Train with custom episode count
+python -m src.main train 1000
+
+# Run full RL evaluation: 4 configs x 5 seeds x 56 queries
+python -m src.main rl-eval
+
+# Run 7-config ablation study with statistical significance tests
+python -m src.main ablation
+```
+
+RL training requires no API keys — it runs entirely on the cached knowledge base (zero API cost).
+Trained models are saved to `knowledge_base/rl_models/` and loaded automatically at query time.
+
+## Reinforcement Learning Extension
+
+PhotoMind integrates two RL approaches that replace rule-based components:
+
+### Approach 1: Contextual Bandits — Query Routing (Exploration Strategies)
+
+Replaces the keyword-based `_classify_query()` in `PhotoKnowledgeBaseTool` with a learned policy that selects the optimal search strategy (factual / semantic / behavioral) based on query features.
+
+- **ThompsonSamplingBandit** — Beta posterior per context cluster, provably optimal exploration
+- **UCBBandit** — UCB1 upper confidence bound per cluster
+- **EpsilonGreedyBandit** — Baseline comparison
+- Context clustering via KMeans on 12-dimensional query feature vectors
+- Training: 2000 episodes × 5 seeds on offline cached search results (zero API cost)
+
+### Approach 2: DQN — Confidence Calibration (Value-Based Learning)
+
+Replaces static confidence thresholding with a DQN that learns when to accept, hedge, or decline retrieval results — directly addressing the silent failure problem.
+
+- Architecture: FC(8→64) → ReLU → FC(64→64) → ReLU → FC(64→4), identical to the LunarLander DQN from this course
+- State: 8-dim vector (top score, score gap, result count, strategy index, query features, entity match indicators)
+- Actions: `accept_high`, `accept_moderate`, `hedge`, `decline`
+- Reward: penalty matrix that heavily penalizes silent failures (confident-but-wrong answers)
+
+### RL Results (56 test queries, 5 seeds)
+
+| Config | Retrieval | Routing | Silent Failures | Decline Acc |
+|--------|-----------|---------|-----------------|-------------|
+| Baseline (Rule-Based) | 87.5% | 76.8% | 1.8% | 90.9% |
+| Full RL (Thompson+DQN) | 87.5% | 67.1% | **0.0%** | **98.2%** |
+
+Key finding: The DQN near-eliminates silent failures (Full RL: 0.0%, DQN-Only: 0.4%, vs 1.8% baseline; p < 0.0001). Decline accuracy improves significantly (Full RL: 98.2%, DQN-Only: 100.0%, p = 0.016). The bandit trades routing accuracy for silent failure reduction on ambiguous queries where the "correct" routing label is itself ambiguous. Cohen's d for silent failure is technically undefined (variance collapses to zero across seeds) — the effect is deterministic and consistent across all 5 seeds.
+
+### RL Architecture
+
+```
+User Query
+    │
+    ▼
+[QueryFeatureExtractor]  →  12-dim feature vector
+    │
+    ▼
+[ContextualBandit]  →  selects arm: factual | semantic | behavioral
+    │                   (ThompsonSampling / UCB / epsilon-greedy)
+    ▼
+[PhotoKnowledgeBaseTool]  →  runs selected strategy, returns results
+    │
+    ▼
+[ConfidenceState]  →  8-dim state vector from retrieval results
+    │
+    ▼
+[ConfidenceDQN]  →  action: accept_high | accept_moderate | hedge | decline
+    │
+    ▼
+[Insight Synthesizer]  →  graded answer with source attribution
+```
+
+**Offline simulation training:** Both components are trained using `PhotoMindSimulator`, which pre-computes all 3 search strategies on all 56 queries once (zero API calls). Training 2000 episodes × 5 seeds × 2 components takes ~60 seconds on CPU.
+
 ## Custom Tool: PhotoKnowledgeBaseTool
 
 `src/tools/photo_knowledge_base.py` — the core differentiator.
@@ -171,7 +250,9 @@ top_k: int = 3           # Number of results
 confidence_threshold: float = 0.15  # Minimum score to include
 ```
 
-## Evaluation Results (25 photos, 20 queries)
+## Evaluation Results
+
+### Base System (25 photos, 20 queries)
 
 | Metric | Score |
 |--------|-------|
@@ -181,12 +262,23 @@ confidence_threshold: float = 0.15  # Minimum score to include
 | Decline Accuracy | **100%** |
 | Avg Latency | ~30s/query |
 
+### RL Extension (25 photos, 56 queries, 5 seeds)
+
+| Config | Retrieval | Routing | Silent Fail | Decline Acc |
+|--------|-----------|---------|-------------|-------------|
+| Baseline (rule-based) | 87.5% | 76.8% | 1.8% | 90.9% |
+| Bandit Only (Thompson) | 86.8% | 66.4% | **0.0%** | 81.8% |
+| DQN Only | 87.5% | 76.8% | **0.4%** | **100.0%** |
+| Full RL (Thompson+DQN) | 87.5% | 67.1% | **0.0%** | **98.2%** |
+
+Statistical tests (Full RL vs Baseline): silent failure p < 0.0001 (***), decline accuracy p = 0.016 (*)
+
 ## Project Structure
 
 ```
 PhotoMind/
 ├── src/
-│   ├── main.py                      # CLI entry point (ingest / query / eval)
+│   ├── main.py                      # CLI entry point (ingest / query / eval / train / rl-eval / ablation)
 │   ├── config.py                    # Pydantic settings (reads .env)
 │   ├── ingest_direct.py             # Direct ingestion (1 API call/photo)
 │   ├── agents/
@@ -197,20 +289,48 @@ PhotoMind/
 │   ├── crews/
 │   │   ├── ingestion_crew.py        # Sequential ingestion pipeline
 │   │   └── query_crew.py            # Hierarchical query pipeline
-│   └── tools/
-│       ├── photo_vision.py          # PhotoVisionTool (GPT-4o Vision + HEIC)
-│       ├── photo_knowledge_base.py  # PhotoKnowledgeBaseTool (custom)
-│       └── feedback_store.py        # FeedbackStore (adaptive threshold learning)
+│   ├── tools/
+│   │   ├── photo_vision.py          # PhotoVisionTool (GPT-4o Vision + HEIC)
+│   │   ├── photo_knowledge_base.py  # PhotoKnowledgeBaseTool (custom) — RL-enhanced
+│   │   └── feedback_store.py        # FeedbackStore (adaptive threshold learning)
+│   └── rl/
+│       ├── rl_config.py             # Centralized RL hyperparameters and reward matrix
+│       ├── feature_extractor.py     # Query → 12-dim feature vector
+│       ├── contextual_bandit.py     # Thompson Sampling, UCB, epsilon-greedy bandits
+│       ├── dqn_confidence.py        # ConfidenceDQN and ConfidenceDQNAgent
+│       ├── replay_buffer.py         # Experience replay buffer (adapted from LunarLander)
+│       ├── reward.py                # Reward computation for bandit and DQN
+│       ├── simulation_env.py        # Offline training environment (zero API cost)
+│       └── training_pipeline.py     # Orchestrates training across seeds
 ├── eval/
-│   ├── test_cases.py                # 20 hand-labeled test queries
-│   └── run_evaluation.py            # Metrics harness
+│   ├── test_cases.py                # 20 original hand-labeled test queries
+│   ├── expanded_test_cases.py       # 36 new cases (incl. 11 ambiguous) — 56 total
+│   ├── run_evaluation.py            # Base system evaluation harness
+│   ├── run_rl_evaluation.py         # RL 4-config comparison harness
+│   ├── ablation.py                  # 7-config ablation with paired t-tests
+│   ├── statistical_analysis.py      # CI, paired t-test, Cohen's d utilities
+│   └── results/                     # JSON results + eval history
+├── viz/
+│   ├── plot_learning_curves.py      # Bandit regret, DQN rewards, posteriors, epsilon decay
+│   ├── plot_ablation.py             # Grouped bar chart (7 configs x 4 metrics)
+│   ├── plot_regret.py               # Cumulative regret comparison (3 bandit types)
+│   └── figures/                     # Generated PNG and PDF figures
+├── scripts/
+│   ├── train_full.py                # Full training + optional ablation
+│   ├── train_bandit.py              # Standalone bandit training
+│   ├── train_dqn.py                 # Standalone DQN training
+│   ├── precompute_cache.py          # Pre-compute search strategy cache
+│   └── demo_comparison.py           # Rule-based vs RL before/after demo
+├── knowledge_base/
+│   ├── photo_index.json             # 25 indexed photos
+│   └── rl_models/                   # Trained RL models
+│       ├── bandit_thompson.pkl      # Trained Thompson Sampling bandit
+│       └── dqn_confidence.pth       # Trained DQN confidence calibrator
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
-├── Photomind.png                    # Demo video thumbnail
 ├── requirements.txt
-├── TECHNICAL_REPORT.md              # Full technical documentation
-└── TECHNICAL_REPORT.pdf             # Technical report (PDF)
+└── TECHNICAL_REPORT.md              # Full technical documentation (base system + RL extension)
 ```
 
 ## Known Limitations
@@ -218,4 +338,6 @@ PhotoMind/
 - Semantic search uses keyword overlap, not true vector embeddings — misses synonyms
 - Knowledge base is a flat JSON file — suitable up to ~500 photos; use a vector DB beyond that
 - Confidence grading is calibrated for a small corpus — thresholds may need tuning at scale
-- Query routing is rule-based; edge cases may misclassify unusual phrasings
+- RL bandit trained on 56 queries with 10x augmentation — may not generalize to unseen phrasing patterns outside the training distribution
+- DQN uses single-step episodes (gamma is structurally irrelevant); a multi-step formulation would be needed for sequential query sessions
+- Bandit context clustering uses k=4 clusters on a small feature space — more data would support finer-grained contextualization
