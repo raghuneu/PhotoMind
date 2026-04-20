@@ -120,8 +120,15 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 })
 
             # Auto-classify query type: try RL bandit first, fall back to rules
+            routing_source = "rule_based"
             if query_type == "auto":
-                query_type = self._rl_classify_query(query) or self._classify_query(query)
+                rl_type = self._rl_classify_query(query)
+                if rl_type is not None:
+                    query_type = rl_type
+                    routing_source = "rl_bandit"
+                else:
+                    query_type = self._classify_query(query)
+                    routing_source = "rule_based"
 
             # Apply feedback-based confidence threshold adjustment
             strategy_accuracy = None
@@ -170,6 +177,12 @@ class PhotoKnowledgeBaseTool(BaseTool):
 
             response = {
                 "query_type_detected": query_type,
+                "routing_rationale": (
+                    f"Strategy '{query_type}' selected via {routing_source}. "
+                    + (f"RL bandit overrode rule-based default."
+                       if routing_source == "rl_bandit"
+                       else "Rule-based classifier matched query keywords.")
+                ),
                 "results": output_results,
                 "confidence_grade": grade,
                 "confidence_score": round(score, 3),
@@ -213,11 +226,16 @@ class PhotoKnowledgeBaseTool(BaseTool):
             return None
 
     def _rl_confidence_grade(self, results: list, strategy: str, query: str) -> str | None:
-        """Use trained DQN for confidence grading. Returns None on failure."""
+        """Use trained DQN for confidence grading. Returns None on failure.
+
+        Supports the multi-step *requery* action: when the DQN selects requery,
+        we run an alternate search strategy and let the DQN re-evaluate.
+        """
         try:
             from src.rl.dqn_confidence import load_trained_dqn, ConfidenceState, action_to_grade
             from src.rl.feature_extractor import QueryFeatureExtractor
-            from src.rl.rl_config import ARM_NAMES, DQN_MODEL_PATH
+            from src.rl.rl_config import ARM_NAMES, DQN_MODEL_PATH, MAX_REQUERY_STEPS
+            import random as _rand
 
             agent = load_trained_dqn(DQN_MODEL_PATH)
             if agent is None:
@@ -228,7 +246,34 @@ class PhotoKnowledgeBaseTool(BaseTool):
             state = ConfidenceState.from_retrieval(results, strategy_idx, features)
             action = agent.select_action(state)
             score = results[0]["relevance_score"] if results else 0.0
-            return action_to_grade(action, score)
+            grade = action_to_grade(action, score)
+
+            # Handle requery: try alternate strategy up to MAX_REQUERY_STEPS
+            requery_count = 0
+            current_strategy_idx = strategy_idx
+            while grade == "REQUERY" and requery_count < MAX_REQUERY_STEPS:
+                alt_arms = [a for a in range(len(ARM_NAMES)) if a != current_strategy_idx]
+                new_arm = _rand.choice(alt_arms)
+                new_strategy = ARM_NAMES[new_arm]
+                with open(self.knowledge_base_path) as f:
+                    kb = json.load(f)
+                search_fn = {
+                    "factual": self._factual_search,
+                    "semantic": self._semantic_search,
+                    "behavioral": self._behavioral_search,
+                }[new_strategy]
+                results = search_fn(query, kb, top_k=5)
+                current_strategy_idx = new_arm
+                state = ConfidenceState.from_retrieval(results, new_arm, features)
+                action = agent.select_action(state)
+                score = results[0]["relevance_score"] if results else 0.0
+                grade = action_to_grade(action, score)
+                requery_count += 1
+
+            if grade == "REQUERY":
+                grade = "D"  # fallback: treat as hedge
+
+            return grade
         except Exception:
             return None
 
@@ -331,7 +376,36 @@ class PhotoKnowledgeBaseTool(BaseTool):
         return results
 
     def _semantic_search(self, query: str, kb: dict, top_k: int) -> list:
-        """Search descriptions and captions for semantic matches."""
+        """Search descriptions and captions for semantic matches.
+
+        Design Trade-off — Keyword Overlap vs. Dense Embeddings
+        --------------------------------------------------------
+        This method uses *weighted keyword overlap* (Jaccard-like) rather
+        than dense-vector cosine similarity.  This is a conscious design
+        decision with clear trade-offs:
+
+        **Pros of keyword overlap (chosen approach):**
+        - Zero external dependency: no embedding model needed at query
+          time, enabling fully offline operation.
+        - Transparent scoring: every point of relevance_score is
+          attributable to a specific word match, aiding debuggability.
+        - Deterministic: identical queries always produce identical results
+          (important for RL training reproducibility).
+
+        **Cons (and mitigation):**
+        - Cannot capture paraphrase equivalence ("expensive meal" ≠
+          "pricey dinner").  *Mitigated* by the RL bandit's ability to
+          re-route a semantic query to factual search when keyword overlap
+          fails — the requery action in the DQN provides a second chance.
+        - Score ceiling is lower (~0.8 max) than cosine similarity (~1.0),
+          meaning the grade boundaries in ``_score_to_grade`` are
+          calibrated specifically for this distributional range.
+
+        A future improvement would be to add a dense-embedding fallback
+        (e.g., ``sentence-transformers/all-MiniLM-L6-v2``) as a fourth
+        bandit arm, letting the RL agent learn when keyword overlap
+        suffices vs. when embeddings are needed.
+        """
         results = []
         query_words = set(_clean(query).split())
         # Normalize by meaningful query words only (ignore stop words like "me", "of")

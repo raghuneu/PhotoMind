@@ -491,3 +491,36 @@ EXPANDED_TEST_CASES = [
 
 # ── Combined suite ────────────────────────────────────────────────────────────
 ALL_TEST_CASES = TEST_CASES + EXPANDED_TEST_CASES
+
+# ── Train / Held-Out Split ───────────────────────────────────────────────────
+# Deterministic split: hold out ~25% (14 of 56 queries) for generalization eval.
+# Selection: 3 factual, 2 semantic, 2 behavioral, 3 edge_case, 4 ambiguous.
+# Chosen to cover each category while keeping the majority for training.
+
+_HELD_OUT_QUERIES = frozenset({
+    # Factual (3): one original, two expanded
+    "How much did I pay at Tropical Foods?",
+    "How much did I spend at Trader Joe's?",
+    "What was the Instacart order total for the avocado order?",
+    # Semantic (2): one original, one expanded
+    "Find photos of beer or drinks",
+    "Find photos that look like they were taken indoors at a restaurant",
+    # Behavioral (2): one original, one expanded
+    "Which store do I shop at most often?",
+    "Which receipt had the highest total?",
+    # Edge case (3): one original, two expanded
+    "Show me photos from Paris",
+    "Show me photos of my dog",
+    "How much did I tip at restaurants?",
+    # Ambiguous (4): critical for RL generalization test
+    "Find my most expensive purchase",
+    "Do I shop at ALDI?",
+    "What food have I been eating lately?",
+    "How much does a Chipotle bowl cost?",
+})
+
+HELD_OUT_TEST_CASES = [tc for tc in ALL_TEST_CASES if tc["query"] in _HELD_OUT_QUERIES]
+TRAIN_TEST_CASES = [tc for tc in ALL_TEST_CASES if tc["query"] not in _HELD_OUT_QUERIES]
+
+assert len(HELD_OUT_TEST_CASES) == 14, f"Expected 14 held-out, got {len(HELD_OUT_TEST_CASES)}"
+assert len(TRAIN_TEST_CASES) == 42, f"Expected 42 train, got {len(TRAIN_TEST_CASES)}"

@@ -124,7 +124,8 @@ def plot_dqn_action_distribution(training_results: dict, save_dir: str = "./viz/
             total = sum(counts)
             proportions = [c / max(total, 1) for c in counts]
 
-            colors = ["#4CAF50", "#2196F3", "#FF9800", "#F44336"]
+            colors = ["#4CAF50", "#2196F3", "#FF9800", "#F44336", "#9C27B0"]
+            colors = colors[:len(actions)]
             bars = ax.bar(actions, proportions, color=colors, edgecolor="white", linewidth=1.5)
 
             for bar, prop in zip(bars, proportions):
@@ -224,6 +225,65 @@ def plot_epsilon_decay(training_results: dict, save_dir: str = "./viz/figures"):
     print(f"Saved epsilon_decay.png/pdf")
 
 
+def plot_per_category_routing(training_results: dict, save_dir: str = "./viz/figures"):
+    """Plot per-category routing accuracy over training episodes."""
+    os.makedirs(save_dir, exist_ok=True)
+    sns.set_theme(style="whitegrid", font_scale=1.2)
+
+    bandit_data = training_results.get("bandit", {})
+    seeds = training_results.get("seeds", [])
+
+    if not seeds:
+        return
+
+    # Collect per-category histories across seeds
+    all_cats = set()
+    seed_histories = []
+    for seed in seeds:
+        seed_data = bandit_data.get(seed, bandit_data.get(str(seed), {}))
+        hist = seed_data.get("per_category_routing_history", [])
+        if hist:
+            seed_histories.append(hist)
+            for snapshot in hist:
+                all_cats.update(snapshot.keys())
+
+    if not seed_histories or not all_cats:
+        print("No per-category routing data found, skipping plot.")
+        return
+
+    cats = sorted(all_cats)
+    min_len = min(len(h) for h in seed_histories)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    color_palette = sns.color_palette("Set2", len(cats))
+
+    for idx, cat in enumerate(cats):
+        # Build array: (n_seeds, n_checkpoints)
+        cat_vals = []
+        for hist in seed_histories:
+            vals = [snap.get(cat, 0.0) for snap in hist[:min_len]]
+            cat_vals.append(vals)
+        cat_vals = np.array(cat_vals)
+        mean = np.mean(cat_vals, axis=0)
+        std = np.std(cat_vals, axis=0)
+        x = np.arange(1, min_len + 1) * 100  # checkpoints every 100 episodes
+
+        ax.plot(x, mean, label=cat.capitalize(), color=color_palette[idx], linewidth=2)
+        ax.fill_between(x, mean - std, mean + std, alpha=0.15, color=color_palette[idx])
+
+    ax.set_xlabel("Training Episode")
+    ax.set_ylabel("Routing Accuracy")
+    ax.set_title("Per-Category Routing Accuracy Over Training (Thompson Sampling)")
+    ax.legend(loc="lower right")
+    ax.set_ylim(-0.05, 1.05)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "per_category_routing.png"), dpi=150, bbox_inches="tight")
+    plt.savefig(os.path.join(save_dir, "per_category_routing.pdf"), bbox_inches="tight")
+    plt.close()
+    print("Saved per_category_routing.png/pdf")
+
+
 def plot_all(results_path: str = "./eval/results/rl_training_results.json",
              save_dir: str = "./viz/figures"):
     """Generate all learning curve plots from saved training results."""
@@ -235,6 +295,7 @@ def plot_all(results_path: str = "./eval/results/rl_training_results.json",
     plot_dqn_action_distribution(results, save_dir)
     plot_bandit_posteriors(results, save_dir)
     plot_epsilon_decay(results, save_dir)
+    plot_per_category_routing(results, save_dir)
     print(f"\nAll learning curve plots saved to {save_dir}/")
 
 

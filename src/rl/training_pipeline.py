@@ -9,6 +9,7 @@ from collections import deque
 from src.rl.rl_config import (
     ARM_NAMES, N_TRAINING_EPISODES, SEEDS, AUGMENTATION_FACTOR,
     BANDIT_MODEL_PATH, DQN_MODEL_PATH, ACTION_NAMES,
+    REQUERY_ACTION, MAX_REQUERY_STEPS,
 )
 from src.rl.simulation_env import PhotoMindSimulator
 from src.rl.contextual_bandit import (
@@ -32,8 +33,13 @@ class TrainingPipeline:
     def __init__(self, kb_path: str = "./knowledge_base/photo_index.json",
                  test_cases: list | None = None):
         if test_cases is None:
-            from eval.test_cases import TEST_CASES
-            test_cases = TEST_CASES
+            # Default to train split to prevent data leakage into RL training
+            try:
+                from eval.expanded_test_cases import TRAIN_TEST_CASES
+                test_cases = TRAIN_TEST_CASES
+            except ImportError:
+                from eval.test_cases import TEST_CASES
+                test_cases = TEST_CASES
         self.kb_path = kb_path
         self.test_cases = test_cases
 
@@ -65,6 +71,7 @@ class TrainingPipeline:
         arm_pulls = {a: 0 for a in range(len(ARM_NAMES))}
         rewards_history = []
         routing_accuracy_history = []
+        per_category_routing_history = []  # per-category routing accuracy over time
 
         for ep in range(n_episodes):
             features, info = sim.reset()
@@ -83,15 +90,24 @@ class TrainingPipeline:
             if (ep + 1) % 100 == 0:
                 correct = 0
                 total = 0
+                cat_correct = {}
+                cat_total = {}
                 for tc in self.test_cases:
                     if tc.get("should_decline"):
                         continue
                     f = sim.feature_extractor.extract(tc["query"])
                     a = bandit.select_arm(f)
-                    if ARM_NAMES[a] == tc.get("expected_type"):
+                    cat = tc.get("expected_type", "unknown")
+                    cat_total[cat] = cat_total.get(cat, 0) + 1
+                    if ARM_NAMES[a] == cat:
                         correct += 1
+                        cat_correct[cat] = cat_correct.get(cat, 0) + 1
                     total += 1
                 routing_accuracy_history.append(correct / max(total, 1))
+                per_category_routing_history.append({
+                    cat: cat_correct.get(cat, 0) / max(cat_total.get(cat, 1), 1)
+                    for cat in cat_total
+                })
 
         # Posteriors for Thompson Sampling visualization
         posteriors = None
@@ -109,6 +125,7 @@ class TrainingPipeline:
             "arm_pulls": arm_pulls,
             "rewards": rewards_history,
             "routing_accuracy_history": routing_accuracy_history,
+            "per_category_routing_history": per_category_routing_history,
             "final_routing_accuracy": routing_accuracy_history[-1] if routing_accuracy_history else 0.0,
             "posteriors": posteriors,
             "_bandit": bandit,
@@ -116,7 +133,7 @@ class TrainingPipeline:
 
     def train_dqn(self, n_episodes: int = N_TRAINING_EPISODES,
                   seed: int = 42, trained_bandit=None) -> dict:
-        """Train the DQN confidence calibrator and return metrics."""
+        """Train the DQN confidence calibrator with multi-step requery episodes."""
         _set_seed(seed)
 
         sim = PhotoMindSimulator(self.kb_path, self.test_cases,
@@ -128,6 +145,8 @@ class TrainingPipeline:
         epsilon_history = []
         action_counts = {a: 0 for a in range(len(ACTION_NAMES))}
         window = deque(maxlen=100)
+        requery_count_total = 0
+        multi_step_episodes = 0
 
         # Rule-based router for DQN-only training (avoids oracle distribution mismatch)
         from src.tools.photo_knowledge_base import PhotoKnowledgeBaseTool as _PKBToolDQN
@@ -146,22 +165,53 @@ class TrainingPipeline:
 
             results, _, _ = sim.step_bandit(arm)
             state = ConfidenceState.from_retrieval(results, arm, features)
-            action = agent.select_action(state)
-            reward, done, dinfo = sim.step_confidence(action, results, info)
 
-            # Single-step episode: next_state = terminal state (zeros)
-            next_state = np.zeros_like(state)
-            loss = agent.step(state, action, reward, next_state, done)
+            # Multi-step episode loop: agent may requery up to MAX_REQUERY_STEPS
+            episode_reward = 0.0
+            requery_count = 0
+            current_arm = arm
+            current_results = results
+
+            for step_i in range(MAX_REQUERY_STEPS + 1):
+                action = agent.select_action(state)
+                reward, done, dinfo = sim.step_confidence(
+                    action, current_results, info, requery_count=requery_count,
+                )
+                action_counts[action] += 1
+                episode_reward += reward
+
+                if action == REQUERY_ACTION and not done:
+                    # Non-terminal: get next state from alternate strategy
+                    new_results, new_arm, next_state = sim.step_requery(
+                        current_arm, info,
+                    )
+                    loss = agent.step(state, action, reward, next_state, done=False)
+                    if loss is not None:
+                        loss_history.append(loss)
+
+                    # Advance to next step
+                    state = next_state
+                    current_results = new_results
+                    current_arm = new_arm
+                    requery_count += 1
+                    requery_count_total += 1
+                else:
+                    # Terminal step
+                    next_state = np.zeros_like(state)
+                    loss = agent.step(state, action, reward, next_state, done=True)
+                    if loss is not None:
+                        loss_history.append(loss)
+                    break
+
+            if requery_count > 0:
+                multi_step_episodes += 1
 
             agent.decay_epsilon()
 
             # Track metrics
-            rewards_history.append(reward)
-            window.append(reward)
-            action_counts[action] += 1
+            rewards_history.append(episode_reward)
+            window.append(episode_reward)
             epsilon_history.append(agent.epsilon)
-            if loss is not None:
-                loss_history.append(loss)
 
         return {
             "seed": seed,
@@ -171,6 +221,8 @@ class TrainingPipeline:
             "loss_history": loss_history,
             "epsilon_history": epsilon_history,
             "action_distribution": action_counts,
+            "requery_count_total": requery_count_total,
+            "multi_step_episodes": multi_step_episodes,
             "_agent": agent,
         }
 
@@ -351,6 +403,21 @@ class TrainingPipeline:
                         state = ConfidenceState.from_retrieval(search_results, arm, features)
                         action = trained_dqn.select_action(state)
                         grade = action_to_grade(action)
+                        # Handle requery at eval: try alternate strategy, re-grade
+                        requery_eval = 0
+                        while grade == "REQUERY" and requery_eval < MAX_REQUERY_STEPS:
+                            alt_arms = [a for a in range(len(ARM_NAMES)) if a != arm]
+                            import random as _rand
+                            alt_arm = _rand.choice(alt_arms)
+                            alt_strategy = ARM_NAMES[alt_arm]
+                            search_results = cached.get(alt_strategy, [])
+                            arm = alt_arm
+                            state = ConfidenceState.from_retrieval(search_results, arm, features)
+                            action = trained_dqn.select_action(state)
+                            grade = action_to_grade(action)
+                            requery_eval += 1
+                        if grade == "REQUERY":
+                            grade = "D"  # fallback: treat as hedge
                     else:
                         score = search_results[0]["relevance_score"] if search_results else 0.0
                         if score >= 0.7: grade = "A"

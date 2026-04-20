@@ -11,6 +11,7 @@ from src.rl.contextual_bandit import ThompsonSamplingBandit
 from src.rl.dqn_confidence import ConfidenceDQNAgent, ConfidenceState, action_to_grade
 from src.rl.rl_config import (
     ARM_NAMES, N_TRAINING_EPISODES, SEEDS, AUGMENTATION_FACTOR,
+    REQUERY_ACTION, MAX_REQUERY_STEPS,
 )
 from src.rl.training_pipeline import TrainingPipeline, _set_seed
 from src.tools.photo_knowledge_base import PhotoKnowledgeBaseTool
@@ -52,6 +53,23 @@ def _evaluate_config(sim, test_cases, bandit=None, dqn_agent=None, use_rule_rout
             action = dqn_agent.select_action(state)
             score = search_results[0]["relevance_score"] if search_results else 0.0
             grade = action_to_grade(action, score)
+            # Handle requery at eval: try alternate strategy, re-grade
+            requery_eval = 0
+            current_arm = arm
+            while grade == "REQUERY" and requery_eval < MAX_REQUERY_STEPS:
+                import random as _rand
+                alt_arms = [a for a in range(len(ARM_NAMES)) if a != current_arm]
+                alt_arm = _rand.choice(alt_arms)
+                alt_strategy = ARM_NAMES[alt_arm]
+                search_results = cached.get(alt_strategy, [])
+                current_arm = alt_arm
+                state = ConfidenceState.from_retrieval(search_results, current_arm, features)
+                action = dqn_agent.select_action(state)
+                score = search_results[0]["relevance_score"] if search_results else 0.0
+                grade = action_to_grade(action, score)
+                requery_eval += 1
+            if grade == "REQUERY":
+                grade = "D"  # fallback: treat as hedge
         else:
             score = search_results[0]["relevance_score"] if search_results else 0.0
             if score >= 0.7: grade = "A"
@@ -96,48 +114,65 @@ def _aggregate_results(results):
         if decline_cases else 0.0
     )
 
+    # Tool usage distribution
+    strategy_counts = {}
+    grade_counts = {}
+    for r in results:
+        s = r.get("strategy_used", "unknown")
+        strategy_counts[s] = strategy_counts.get(s, 0) + 1
+        g = r.get("confidence_grade", "?")
+        grade_counts[g] = grade_counts.get(g, 0) + 1
+
     return {
         "retrieval_accuracy": retrieval_acc,
         "routing_accuracy": routing_acc,
         "silent_failure_rate": silent_failure_rate,
         "decline_accuracy": decline_acc,
+        "strategy_distribution": strategy_counts,
+        "grade_distribution": grade_counts,
     }
 
 
 def run_rl_eval(n_episodes: int = N_TRAINING_EPISODES, seeds: list | None = None):
-    """Run 4-config RL evaluation with statistical analysis."""
+    """Run 5-config RL evaluation with statistical analysis and held-out generalization."""
     if seeds is None:
         seeds = SEEDS
 
-    # Try to load expanded test cases
+    # Load test suites
     try:
-        from eval.expanded_test_cases import ALL_TEST_CASES
-        test_cases = ALL_TEST_CASES
-        print(f"Using expanded test suite: {len(test_cases)} queries")
+        from eval.expanded_test_cases import ALL_TEST_CASES, TRAIN_TEST_CASES, HELD_OUT_TEST_CASES
+        full_test_cases = ALL_TEST_CASES
+        train_test_cases = TRAIN_TEST_CASES
+        held_out_test_cases = HELD_OUT_TEST_CASES
+        print(f"Test suites: {len(full_test_cases)} total, "
+              f"{len(train_test_cases)} train, {len(held_out_test_cases)} held-out")
     except ImportError:
-        test_cases = TEST_CASES
-        print(f"Using original test suite: {len(test_cases)} queries")
+        full_test_cases = TEST_CASES
+        train_test_cases = TEST_CASES
+        held_out_test_cases = []
+        print(f"Using original test suite: {len(full_test_cases)} queries (no held-out split)")
 
     configs = [
         {"name": "Baseline (Rule-Based)", "bandit": False, "dqn": False, "rule_routing": True},
         {"name": "Bandit Only (Thompson)", "bandit": True, "dqn": False, "rule_routing": False},
         {"name": "DQN Only", "bandit": False, "dqn": True, "rule_routing": True},
         {"name": "Full RL (Thompson+DQN)", "bandit": True, "dqn": True, "rule_routing": False},
+        {"name": "Recommended (Rule+DQN)", "bandit": False, "dqn": True, "rule_routing": True},
     ]
 
     print(f"\nRL Evaluation: {len(configs)} configs x {len(seeds)} seeds")
     print("=" * 70)
 
     all_config_results = {}
-    pipeline = TrainingPipeline(test_cases=test_cases)
+    # Train on train split only to prevent data leakage
+    pipeline = TrainingPipeline(test_cases=train_test_cases)
 
     for config in configs:
         config_name = config["name"]
-        per_seed_metrics = []
+        per_seed_metrics = {"full": [], "held_out": []}
 
         for seed in seeds:
             _set_seed(seed)
-            sim = PhotoMindSimulator(pipeline.kb_path, test_cases, augmentation_factor=1)
 
             trained_bandit = None
             if config["bandit"]:
@@ -150,58 +185,116 @@ def run_rl_eval(n_episodes: int = N_TRAINING_EPISODES, seeds: list | None = None
                 trained_dqn = dqn_result["_agent"]
                 trained_dqn.epsilon = 0.0
 
-            results = _evaluate_config(
-                sim, test_cases,
+            # Evaluate on full set
+            sim_full = PhotoMindSimulator(pipeline.kb_path, full_test_cases, augmentation_factor=1)
+            results_full = _evaluate_config(
+                sim_full, full_test_cases,
                 bandit=trained_bandit,
                 dqn_agent=trained_dqn,
                 use_rule_routing=config["rule_routing"],
             )
-            metrics = _aggregate_results(results)
-            per_seed_metrics.append(metrics)
+            per_seed_metrics["full"].append(_aggregate_results(results_full))
 
-        # Aggregate across seeds
+            # Evaluate on held-out set (generalization)
+            if held_out_test_cases:
+                sim_ho = PhotoMindSimulator(pipeline.kb_path, held_out_test_cases, augmentation_factor=1)
+                results_ho = _evaluate_config(
+                    sim_ho, held_out_test_cases,
+                    bandit=trained_bandit,
+                    dqn_agent=trained_dqn,
+                    use_rule_routing=config["rule_routing"],
+                )
+                per_seed_metrics["held_out"].append(_aggregate_results(results_ho))
+
+        # Aggregate across seeds for each split
         aggregated = {}
-        for metric in ["retrieval_accuracy", "routing_accuracy",
-                       "silent_failure_rate", "decline_accuracy"]:
-            values = [m[metric] for m in per_seed_metrics]
-            mean, lower, upper, margin = confidence_interval(values)
-            aggregated[metric] = {
-                "mean": mean, "lower": lower, "upper": upper,
-                "values": values,
-            }
+        for split_name, seed_metrics in per_seed_metrics.items():
+            if not seed_metrics:
+                continue
+            split_agg = {}
+            for metric in ["retrieval_accuracy", "routing_accuracy",
+                           "silent_failure_rate", "decline_accuracy"]:
+                values = [m[metric] for m in seed_metrics]
+                mean, lower, upper, margin = confidence_interval(values)
+                split_agg[metric] = {
+                    "mean": mean, "lower": lower, "upper": upper,
+                    "values": values,
+                }
+            aggregated[split_name] = split_agg
 
         all_config_results[config_name] = {
             "per_seed": per_seed_metrics,
             "aggregated": aggregated,
         }
 
-    # Print comparison table — column width 24 accommodates "87.5% [85.3%, 89.7%]"
-    print(f"\n{'Config':<30} {'Retrieval':>24} {'Routing':>24} {'SilentFail':>24} {'Decline':>24}")
-    print("-" * 106)
+    # Print comparison table — Full test set
+    print(f"\n=== Full Test Set ({len(full_test_cases)} queries) ===")
+    print(f"{'Config':<30} {'Retrieval':>24} {'Routing':>24} {'SilentFail':>24} {'Decline':>24}")
+    print("-" * 130)
     for name, data in all_config_results.items():
-        agg = data["aggregated"]
+        agg = data["aggregated"]["full"]
         print(f"{name:<30} "
               f"{format_ci(agg['retrieval_accuracy']['mean'], agg['retrieval_accuracy']['lower'], agg['retrieval_accuracy']['upper']):>24} "
               f"{format_ci(agg['routing_accuracy']['mean'], agg['routing_accuracy']['lower'], agg['routing_accuracy']['upper']):>24} "
               f"{format_ci(agg['silent_failure_rate']['mean'], agg['silent_failure_rate']['lower'], agg['silent_failure_rate']['upper']):>24} "
               f"{format_ci(agg['decline_accuracy']['mean'], agg['decline_accuracy']['lower'], agg['decline_accuracy']['upper']):>24}")
 
-    # Statistical tests: Full RL vs Baseline
+    # Print comparison table — Held-out set
+    if held_out_test_cases:
+        print(f"\n=== Held-Out Generalization ({len(held_out_test_cases)} queries) ===")
+        print(f"{'Config':<30} {'Retrieval':>24} {'Routing':>24} {'SilentFail':>24} {'Decline':>24}")
+        print("-" * 130)
+        for name, data in all_config_results.items():
+            agg = data["aggregated"].get("held_out", {})
+            if not agg:
+                continue
+            print(f"{name:<30} "
+                  f"{format_ci(agg['retrieval_accuracy']['mean'], agg['retrieval_accuracy']['lower'], agg['retrieval_accuracy']['upper']):>24} "
+                  f"{format_ci(agg['routing_accuracy']['mean'], agg['routing_accuracy']['lower'], agg['routing_accuracy']['upper']):>24} "
+                  f"{format_ci(agg['silent_failure_rate']['mean'], agg['silent_failure_rate']['lower'], agg['silent_failure_rate']['upper']):>24} "
+                  f"{format_ci(agg['decline_accuracy']['mean'], agg['decline_accuracy']['lower'], agg['decline_accuracy']['upper']):>24}")
+
+    # Statistical tests: Full RL vs Baseline (on full set)
     baseline = all_config_results["Baseline (Rule-Based)"]
     full_rl = all_config_results["Full RL (Thompson+DQN)"]
 
-    print("\n--- Statistical Tests: Full RL vs Baseline ---")
+    # Tool usage summary (from first seed of each config on full set)
+    print("\n=== Tool Usage Summary (Strategy & Grade Distribution) ===")
+    for name in all_config_results:
+        data = all_config_results.get(name)
+        if not data:
+            continue
+        full_seeds = data["per_seed"].get("full", data["per_seed"])
+        if isinstance(full_seeds, list) and full_seeds:
+            first = full_seeds[0]
+            strat = first.get("strategy_distribution", {})
+            grade = first.get("grade_distribution", {})
+            print(f"  {name:<30} strategies={strat}  grades={grade}")
+
+    print("\n--- Statistical Tests: Full RL vs Baseline (Full Set) ---")
     for metric in ["retrieval_accuracy", "routing_accuracy",
                    "silent_failure_rate", "decline_accuracy"]:
-        bl_vals = baseline["aggregated"][metric]["values"]
-        rl_vals = full_rl["aggregated"][metric]["values"]
+        bl_vals = baseline["aggregated"]["full"][metric]["values"]
+        rl_vals = full_rl["aggregated"]["full"][metric]["values"]
         t_stat, p_val = paired_t_test(bl_vals, rl_vals)
         d = cohens_d(bl_vals, rl_vals)
         sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
-        # Cohen's d is undefined (inf) when variance collapses to zero but mean differs —
-        # this represents a deterministic, consistent effect across all seeds.
         d_str = "inf*" if d == float('inf') else f"{d:>6.3f}"
         print(f"  {metric:<25} t={t_stat:>7.3f}, p={p_val:.4f} {sig}, d={d_str}")
+
+    # Statistical tests: Recommended vs Baseline (on held-out set)
+    if held_out_test_cases:
+        recommended = all_config_results["Recommended (Rule+DQN)"]
+        print("\n--- Statistical Tests: Recommended (Rule+DQN) vs Baseline (Held-Out) ---")
+        for metric in ["retrieval_accuracy", "routing_accuracy",
+                       "silent_failure_rate", "decline_accuracy"]:
+            bl_vals = baseline["aggregated"]["held_out"][metric]["values"]
+            rec_vals = recommended["aggregated"]["held_out"][metric]["values"]
+            t_stat, p_val = paired_t_test(bl_vals, rec_vals)
+            d = cohens_d(bl_vals, rec_vals)
+            sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
+            d_str = "inf*" if d == float('inf') else f"{d:>6.3f}"
+            print(f"  {metric:<25} t={t_stat:>7.3f}, p={p_val:.4f} {sig}, d={d_str}")
 
     # Save results
     results_path = "./eval/results/rl_eval_results.json"

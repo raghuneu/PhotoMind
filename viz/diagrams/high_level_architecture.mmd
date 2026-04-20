@@ -1,0 +1,18 @@
+graph TB
+    subgraph PhotoMind
+        subgraph Ingestion["INGESTION PIPELINE<br/>(Process.sequential)"]
+            PA["Photo Analyst Agent"]
+            PA -->|DirectoryReadTool| Scan["Scan photos/"]
+            Scan -->|PhotoVisionTool| Analyze["Analyze via GPT-4o Vision"]
+            Analyze --> Index["Index → JSON KB"]
+            KR1["Knowledge Retriever Agent"]
+        end
+        subgraph Query["QUERY PIPELINE<br/>(Process.hierarchical)"]
+            Controller["Controller Agent<br/>(Manager/Orchestrator)"]
+            Controller --> Retriever["Knowledge Retriever Agent"]
+            Controller --> Synthesizer["Insight Synthesizer Agent"]
+        end
+        KB[("Knowledge Base<br/>photo_index.json")]
+        Index --> KB
+        Retriever --> KB
+    end

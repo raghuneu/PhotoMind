@@ -64,10 +64,10 @@ def main():
     elif command == "train":
         from src.rl.training_pipeline import TrainingPipeline
         from src.rl.rl_config import N_TRAINING_EPISODES, SEEDS
-        from eval.expanded_test_cases import ALL_TEST_CASES
+        from eval.expanded_test_cases import TRAIN_TEST_CASES
 
         episodes = int(sys.argv[2]) if len(sys.argv) > 2 else N_TRAINING_EPISODES
-        pipeline = TrainingPipeline(test_cases=ALL_TEST_CASES)
+        pipeline = TrainingPipeline(test_cases=TRAIN_TEST_CASES)
         pipeline.train_full(n_episodes=episodes, seeds=SEEDS)
 
     elif command == "rl-eval":
@@ -78,10 +78,10 @@ def main():
     elif command == "ablation":
         from src.rl.training_pipeline import TrainingPipeline
         from src.rl.rl_config import N_TRAINING_EPISODES, SEEDS
-        from eval.expanded_test_cases import ALL_TEST_CASES
+        from eval.expanded_test_cases import TRAIN_TEST_CASES
 
         episodes = int(sys.argv[2]) if len(sys.argv) > 2 else N_TRAINING_EPISODES
-        pipeline = TrainingPipeline(test_cases=ALL_TEST_CASES)
+        pipeline = TrainingPipeline(test_cases=TRAIN_TEST_CASES)
         pipeline.run_ablation(n_episodes=episodes, seeds=SEEDS)
 
     else:

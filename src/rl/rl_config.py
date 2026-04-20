@@ -5,13 +5,15 @@ import os
 # ── Bandit Config ────────────────────────────────────────────────────
 N_ARMS = 3
 ARM_NAMES = ["factual", "semantic", "behavioral"]
+# k=4 selected via silhouette analysis over k ∈ {2,3,4,5,6,8};
+# see contextual_bandit.fit_clusters() and TECHNICAL_REPORT.md §10.3.
 N_CONTEXT_CLUSTERS = 4
 UCB_EXPLORATION_CONSTANT = 2.0
 EPSILON_GREEDY_EPSILON = 0.1
 
 # ── DQN Config (adapted from LunarLander) ───────────────────────────
 DQN_STATE_DIM = 8
-DQN_ACTION_DIM = 4
+DQN_ACTION_DIM = 5
 DQN_HIDDEN_DIM = 64
 DQN_LR = 5e-4
 DQN_GAMMA = 0.99
@@ -23,7 +25,10 @@ DQN_BATCH_SIZE = 32
 DQN_TAU = 1e-3
 DQN_UPDATE_EVERY = 4
 
-ACTION_NAMES = ["accept_high", "accept_moderate", "hedge", "decline"]
+ACTION_NAMES = ["accept_high", "accept_moderate", "hedge", "requery", "decline"]
+REQUERY_ACTION = 3          # index of the requery action
+DECLINE_ACTION = 4          # index of the decline action
+MAX_REQUERY_STEPS = 2       # max times agent can requery before forced terminal
 
 # ── Training Config ──────────────────────────────────────────────────
 N_TRAINING_EPISODES = 2000
@@ -49,11 +54,16 @@ REWARD_MATRIX = {
     (2, False, False): +0.2,   # wrong but hedged — appropriate caution
     (2, True, True): +0.3,     # should decline, hedged — close
     (2, False, True): +0.3,    # should decline, hedged — close
-    # decline (action 3)
-    (3, True, False): -0.3,    # correct retrieval but declined — unnecessary
-    (3, False, False): +0.5,   # wrong retrieval, declined — appropriate
-    (3, True, True): +1.0,     # should decline, did decline — perfect
-    (3, False, True): +1.0,    # should decline, did decline — perfect
+    # requery (action 3) — try alternate strategy; small step cost
+    (3, True, False): -0.1,    # requery step cost (correct result available)
+    (3, False, False): -0.1,   # requery step cost (wrong result — worth retrying)
+    (3, True, True): -0.1,     # requery step cost (should decline case)
+    (3, False, True): -0.1,    # requery step cost (should decline case)
+    # decline (action 4)
+    (4, True, False): -0.3,    # correct retrieval but declined — unnecessary
+    (4, False, False): +0.5,   # wrong retrieval, declined — appropriate
+    (4, True, True): +1.0,     # should decline, did decline — perfect
+    (4, False, True): +1.0,    # should decline, did decline — perfect
 }
 
 # ── Model Paths ──────────────────────────────────────────────────────

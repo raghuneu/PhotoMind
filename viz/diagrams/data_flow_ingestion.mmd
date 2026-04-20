@@ -1,0 +1,4 @@
+graph TD
+    A["photos/ directory"] -->|DirectoryReadTool| B["List of image files<br/>(JPG, PNG, HEIC)"]
+    B -->|"PhotoVisionTool → GPT-4o Vision API"| C["Per-photo analysis:<br/>{image_type, ocr_text,<br/>description, entities, confidence}"]
+    C -->|"FileReadTool + direct write"| D[("knowledge_base/photo_index.json<br/>[25 photos indexed]")]

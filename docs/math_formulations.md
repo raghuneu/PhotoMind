@@ -6,20 +6,40 @@ LaTeX-ready formulations for the technical report and presentation slides.
 
 ## 1. MDP Definition (DQN Confidence Calibrator)
 
-The confidence calibration problem is formulated as a single-step Markov Decision Process:
+The confidence calibration problem is formulated as a multi-step Markov Decision Process
+with a *requery* action that allows the agent to try an alternate retrieval strategy
+before committing to a final confidence decision.
 
 - **State space** S ⊆ ℝ^8: retrieval context vectors
   - s = [top_score, score_gap, num_results_norm, strategy_idx_norm, query_length_norm, entity_match, type_match, avg_score]
-- **Action space** A = {accept_high, accept_moderate, hedge, decline} = {0, 1, 2, 3}
+- **Action space** A = {accept_high, accept_moderate, hedge, requery, decline} = {0, 1, 2, 3, 4}
 - **Reward function** R: S × A → ℝ (see reward matrix in rl_config.py)
-- **Discount factor** γ = 0.99 (structurally irrelevant for single-step episodes; retained for architectural consistency with LunarLander baseline)
-- **Episodes**: single-step (done = True after every action)
+- **Discount factor** γ = 0.99
+- **Episode length**: 1 to (MAX_REQUERY_STEPS + 1) steps, depending on agent behaviour
+  - Terminal actions: accept_high, accept_moderate, hedge, decline → done = True
+  - Non-terminal action: requery → done = False; agent observes results from an alternate strategy and acts again
+  - Maximum requery depth: MAX_REQUERY_STEPS = 2 (after which requery is forced terminal)
 
-Since episodes are single-step, the Bellman optimality equation reduces to:
+### Multi-Step Bellman Equation
 
-    Q*(s, a) = R(s, a)    for all s ∈ S, a ∈ A
+For terminal actions a ∈ {accept_high, accept_moderate, hedge, decline}:
 
-The optimal policy is: π*(s) = argmax_a R(s, a)
+    Q*(s, a) = R(s, a)
+
+For the requery action (a = 3), the next state s' is drawn from the alternate strategy:
+
+    Q*(s, requery) = R(s, requery) + γ · max_{a'} Q*(s', a')
+
+where s' = ConfidenceState(results_{alt}, strategy_{alt}, φ(q)) and strategy_{alt} is
+sampled uniformly from the strategies not equal to the current one.
+
+This makes γ **structurally relevant**: the agent must weigh the immediate requery cost
+(R(s, requery) = −0.1) against the discounted expected value of acting on a potentially
+better set of results.
+
+The optimal policy is:
+
+    π*(s) = argmax_a Q*(s, a)
 
 ---
 
@@ -32,11 +52,15 @@ The Q-network approximates Q*(s, a) using a fully connected neural network:
 where FC_i are linear layers with:
 - FC_1: ℝ^8 → ℝ^64
 - FC_2: ℝ^64 → ℝ^64
-- FC_3: ℝ^64 → ℝ^4
+- FC_3: ℝ^64 → ℝ^5
 
-**TD target** (with terminal next state):
+**TD target** (multi-step with requery):
 
-    y = R(s, a)    [since next_state is terminal, (1 - done) = 0]
+    y = r + γ · (1 − done) · max_{a'} Q(s', a'; θ_target)
+
+When the action is terminal (accept/hedge/decline), done = 1 and y = r.
+When the action is requery, done = 0 and the discounted future value is included,
+making γ = 0.99 numerically active in the gradient update.
 
 **Loss function:**
 

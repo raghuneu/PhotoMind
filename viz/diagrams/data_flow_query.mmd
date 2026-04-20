@@ -1,0 +1,4 @@
+graph TD
+    Q["User natural-language query"] -->|Controller classifies intent| T["Query type:<br/>factual | semantic | behavioral"]
+    T -->|PhotoKnowledgeBaseTool| S["Search results with<br/>relevance scores"]
+    S -->|Insight Synthesizer| R["Structured answer:<br/>{answer, confidence_grade,<br/>source_photos, reasoning}"]

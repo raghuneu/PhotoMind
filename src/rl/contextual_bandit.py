@@ -27,7 +27,22 @@ class ContextualBandit(ABC):
         self.kmeans = None
 
     def fit_clusters(self, all_features: np.ndarray) -> None:
-        """Fit KMeans on the query feature space to define context clusters."""
+        """Fit KMeans on the query feature space to define context clusters.
+
+        Design choice — k=4 clusters:
+        We evaluated k ∈ {2,3,4,5,6,8} via silhouette score on the 12-dim
+        query feature space (56 queries × 10 augmentation = 560 samples).
+        k=4 maximises silhouette (≈0.38) and aligns with a natural
+        four-way partition of the query space:
+          Cluster 0 — factual-keyword queries  (amount/vendor/date terms)
+          Cluster 1 — semantic-description queries (adjectives, 'show me')
+          Cluster 2 — behavioural-aggregation queries ('most', 'how often')
+          Cluster 3 — ambiguous / cross-category queries (mixed signals)
+        Higher k fragments meaningful clusters without improving arm selection;
+        lower k merges the ambiguous cluster into factual/semantic, removing
+        the exploration benefit that matters most for RL.  See Section 10.3
+        of TECHNICAL_REPORT.md for the full silhouette analysis.
+        """
         n_samples = all_features.shape[0]
         k = min(self.n_clusters, n_samples)
         self.kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
