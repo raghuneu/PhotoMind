@@ -1,10 +1,13 @@
 # PhotoMind
 
+> **Take-Home Final: Reinforcement Learning for Agentic AI Systems**
+> This project is the submission for the take-home final. The work lives on the `feature/reinforcement-learning-extension` branch
+
 A multimodal personal photo knowledge retrieval system built with CrewAI. Turns your phone's photo library into a queryable knowledge base — ask natural-language questions, get answers with confidence scores and source attribution.
 
-**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind) · **Demo:** [youtu.be/wcw8_X2_HGE](https://youtu.be/wcw8_X2_HGE)
+**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind) · **Demo:** [youtu.be/UQRdkW2mAgc](https://youtu.be/UQRdkW2mAgc)
 
-[![Demo Video](Photomind.png)](https://youtu.be/wcw8_X2_HGE)
+[![Demo Video](Photomind_withRL.png)](https://youtu.be/UQRdkW2mAgc)
 
 ## What It Does
 

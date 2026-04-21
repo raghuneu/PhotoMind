@@ -120,8 +120,9 @@ where:
 
     R_bandit(a, y, expected_type) =
         1.0    if ARM_NAMES[a] == expected_type AND expected_photo in results
+        1.0    if expected_photo is None (aggregate query) AND ARM_NAMES[a] == expected_type
         0.5    if expected_photo in results but ARM_NAMES[a] != expected_type
-        0.3    if expected_photo is None (aggregate query) AND ARM_NAMES[a] == expected_type
+        0.3    if expected_photo is None (aggregate query) AND ARM_NAMES[a] != expected_type
         0.0    otherwise
 
 ---
