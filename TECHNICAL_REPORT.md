@@ -339,7 +339,7 @@ This ensures the system learns from evaluation results: strategies with low accu
 
 ### 6.4 Communication Protocols Between Agents
 
-PhotoMind agents communicate through three mechanisms:
+PhotoMind agents communicate through four mechanisms:
 
 **1. Context passing (structured data flow).** CrewAI's `context=[previous_task]` parameter passes the full output of one task as input context to the next. In the ingestion crew, scan results flow to the analyze task, and analyze results flow to the index task. In the query crew, retrieval results (including relevance scores, evidence strings, and confidence grades) flow from the Knowledge Retriever's task to the Insight Synthesizer's task. This is the primary inter-agent data channel -- agents never communicate directly; all data flows through task context.
 
@@ -937,7 +937,7 @@ pytest tests/ -v
 **Software versions:** Python 3.10.14, PyTorch 2.x (CPU), CrewAI 0.108+, scikit-learn 1.x, numpy 1.x. Exact pinned versions are in `requirements.txt`.
 
 **Output locations:**
-- Trained models: `models/` (bandit posteriors, DQN weights per seed)
+- Trained models: `knowledge_base/rl_models/` (bandit posteriors, DQN weights per seed)
 - Evaluation results: `eval/results/` (JSON files with per-config metrics)
 - Figures: `viz/figures/` (10 PNG files referenced as Figures 1-10 in this report)
 - Test results: standard pytest output to stdout
@@ -1008,8 +1008,8 @@ The reduction of silent failures (2.4% → 0.5% with Recommended config; 0.0% wi
 
 ---
 
-*Demo video: [youtu.be/wcw8_X2_HGE](https://youtu.be/wcw8_X2_HGE)*
-*Repository: [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind)*
+*Demo video: [youtube.com/watch?v=UQRdkW2mAgc](https://www.youtube.com/watch?v=UQRdkW2mAgc)*
+*Repository: [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind/tree/feature/reinforcement-learning-extension)*
 *Submitted for: Building Agentic Systems Assignment (RL Final)*
 *Implementation: CrewAI 1.14.1 - GPT-4o Vision - PyTorch - Python 3.10.14*
 *RL Training: Thompson Sampling (contextual bandit) + Multi-Step DQN (confidence calibration with requery)*

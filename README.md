@@ -5,9 +5,9 @@
 
 A multimodal personal photo knowledge retrieval system built with CrewAI. Turns your phone's photo library into a queryable knowledge base — ask natural-language questions, get answers with confidence scores and source attribution.
 
-**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind) · **Demo:** [youtu.be/UQRdkW2mAgc](https://youtu.be/UQRdkW2mAgc)
+**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind/tree/feature/reinforcement-learning-extension) · **Demo:** [youtu.be/UQRdkW2mAgc](https://www.youtube.com/watch?v=UQRdkW2mAgc)
 
-[![Demo Video](Photomind_withRL.png)](https://youtu.be/UQRdkW2mAgc)
+[![Demo Video](Photomind_withRL.png)](https://www.youtube.com/watch?v=UQRdkW2mAgc)
 
 ## What It Does
 
@@ -163,7 +163,7 @@ python -m src.main train
 # Train with custom episode count
 python -m src.main train 1000
 
-# Run full RL evaluation: 4 configs x 5 seeds x 56 queries
+# Run full RL evaluation: 5 configs x 5 seeds x 56 queries
 python -m src.main rl-eval
 
 # Run 7-config ablation study → eval/results/ablation_results.json
@@ -192,9 +192,9 @@ Replaces the keyword-based `_classify_query()` in `PhotoKnowledgeBaseTool` with 
 
 Replaces static confidence thresholding with a DQN that learns when to accept, hedge, or decline retrieval results — directly addressing the silent failure problem.
 
-- Architecture: FC(8→64) → ReLU → FC(64→64) → ReLU → FC(64→4), identical to the LunarLander DQN from this course
+- Architecture: FC(8→64) → ReLU → FC(64→64) → ReLU → FC(64→5), adapted from the LunarLander DQN (extended with a requery action)
 - State: 8-dim vector (top score, score gap, result count, strategy index, query features, entity match indicators)
-- Actions: `accept_high`, `accept_moderate`, `hedge`, `decline`
+- Actions: `accept_high`, `accept_moderate`, `hedge`, `requery`, `decline`
 - Reward: penalty matrix that heavily penalizes silent failures (confident-but-wrong answers)
 
 ### RL Results (56 test queries, 5 seeds)
@@ -206,7 +206,7 @@ Replaces static confidence thresholding with a DQN that learns when to accept, h
 
 Key finding: The DQN eliminates silent failures (Full RL: 0.0% vs 1.8% baseline; p < 0.0001). The bandit trades routing accuracy for silent failure reduction on ambiguous queries where the "correct" routing label is itself ambiguous.
 
-*Note: Numbers above are from the 4-config rl-eval harness. The full 7-config ablation in the technical report uses a separate run and shows slightly different values (e.g., 96.4% decline, 1.1% DQN-Only silent failure) due to the strategy_type_map correction applied before the ablation run.*
+*Note: Numbers above are from the 5-config rl-eval harness. The full 7-config ablation in the technical report uses a separate run and shows slightly different values (e.g., 96.4% decline, 1.1% DQN-Only silent failure) due to the strategy_type_map correction applied before the ablation run.*
 
 ### RL Architecture
 
@@ -226,7 +226,7 @@ User Query
 [ConfidenceState]  →  8-dim state vector from retrieval results
     │
     ▼
-[ConfidenceDQN]  →  action: accept_high | accept_moderate | hedge | decline
+[ConfidenceDQN]  →  action: accept_high | accept_moderate | hedge | requery | decline
     │
     ▼
 [Insight Synthesizer]  →  graded answer with source attribution
@@ -298,6 +298,7 @@ PhotoMind/
 │   ├── tools/
 │   │   ├── photo_vision.py          # PhotoVisionTool (GPT-4o Vision + HEIC)
 │   │   ├── photo_knowledge_base.py  # PhotoKnowledgeBaseTool (custom) — RL-enhanced
+│   │   ├── query_memory.py          # Query memory and deduplication
 │   │   └── feedback_store.py        # FeedbackStore (adaptive threshold learning)
 │   └── rl/
 │       ├── rl_config.py             # Centralized RL hyperparameters and reward matrix
@@ -312,7 +313,7 @@ PhotoMind/
 │   ├── test_cases.py                # 20 original hand-labeled test queries
 │   ├── expanded_test_cases.py       # 36 new cases (incl. 11 ambiguous) — 56 total
 │   ├── run_evaluation.py            # Base system evaluation harness
-│   ├── run_rl_evaluation.py         # RL 4-config comparison harness
+│   ├── run_rl_evaluation.py         # RL 5-config comparison harness
 │   ├── ablation.py                  # 7-config ablation with paired t-tests
 │   ├── statistical_analysis.py      # CI, paired t-test, Cohen's d utilities
 │   └── results/                     # JSON results + eval history
@@ -320,21 +321,30 @@ PhotoMind/
 │   ├── plot_learning_curves.py      # Bandit regret, DQN rewards, posteriors, epsilon decay
 │   ├── plot_ablation.py             # Grouped bar chart (7 configs x 4 metrics)
 │   ├── plot_regret.py               # Cumulative regret comparison (3 bandit types)
+│   ├── plot_before_after.py         # Before/after RL comparison plots
+│   ├── generate_diagrams.py         # Architecture and flow diagrams
 │   └── figures/                     # Generated PNG and PDF figures
 ├── scripts/
 │   ├── train_full.py                # Full training + optional ablation
 │   ├── train_bandit.py              # Standalone bandit training
 │   ├── train_dqn.py                 # Standalone DQN training
 │   ├── precompute_cache.py          # Pre-compute search strategy cache
+│   ├── scaling_benchmark.py         # Scaling and performance benchmarks
 │   └── demo_comparison.py           # Rule-based vs RL before/after demo
 ├── knowledge_base/
 │   ├── photo_index.json             # 25 indexed photos
 │   └── rl_models/                   # Trained RL models
 │       ├── bandit_thompson.pkl      # Trained Thompson Sampling bandit
 │       └── dqn_confidence.pth       # Trained DQN confidence calibrator
+├── tests/
+│   └── test_core.py                 # Core functionality tests
+├── docs/
+│   ├── math_formulations.md         # Mathematical formulations for RL components
+│   └── mermaid_diagrams/            # Mermaid diagram sources
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
+├── PROJECT_RETROSPECTIVE.md         # Project retrospective and lessons learned
 ├── requirements.txt
 └── TECHNICAL_REPORT.md              # Full technical documentation (base system + RL extension)
 ```
@@ -345,5 +355,5 @@ PhotoMind/
 - Knowledge base is a flat JSON file — suitable up to ~500 photos; use a vector DB beyond that
 - Confidence grading is calibrated for a small corpus — thresholds may need tuning at scale
 - RL bandit trained on 56 queries with 10x augmentation — may not generalize to unseen phrasing patterns outside the training distribution
-- DQN uses single-step episodes (gamma is structurally irrelevant); a multi-step formulation would be needed for sequential query sessions
+- DQN requery action selects an alternate strategy randomly rather than learning which alternate to try; a learned requery policy could improve multi-step episode returns
 - Bandit context clustering uses k=4 clusters on a small feature space — more data would support finer-grained contextualization
