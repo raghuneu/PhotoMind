@@ -222,3 +222,5 @@ photos/
 # Frontend build artifacts
 web/node_modules/
 web/dist/
+
+knowledge_base/embeddings.npz
