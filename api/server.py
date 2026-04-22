@@ -16,12 +16,14 @@ import json
 import os
 import time
 import base64
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 # ── Paths ────────────────────────────────────────────────────────────────
@@ -60,13 +62,115 @@ app.add_middleware(
 )
 
 
-# ── In-memory cache ─────────────────────────────────────────────────────
+# ── API Key Auth ───────────────────────────────────────────────────────
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _get_configured_api_key() -> str:
+    """Load the API key from settings (cached after first call)."""
+    import sys
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from src.config import get_settings
+    return get_settings().api_key
+
+
+async def verify_api_key(api_key: str | None = Security(_api_key_header)):
+    """Dependency that enforces API key auth when configured."""
+    expected = _get_configured_api_key()
+    if not expected:  # No key configured — auth disabled
+        return
+    if not api_key or api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+# ── In-memory caches ───────────────────────────────────────────────────
 _kb_cache: dict | None = None
+_repo = None  # PhotoRepository singleton for default user
+_user_repos: dict[str, object] = {}  # user_id → PhotoRepository
+
+
+class LRUQueryCache:
+    """Simple TTL-aware LRU cache for fast query results."""
+
+    def __init__(self, maxsize: int = 128, ttl_seconds: float = 300):
+        self._cache: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
+        self._maxsize = maxsize
+        self._ttl = ttl_seconds
+
+    def get(self, key: tuple) -> dict | None:
+        if key not in self._cache:
+            return None
+        ts, value = self._cache[key]
+        if time.time() - ts > self._ttl:
+            del self._cache[key]
+            return None
+        self._cache.move_to_end(key)
+        return value
+
+    def put(self, key: tuple, value: dict) -> None:
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = (time.time(), value)
+        if len(self._cache) > self._maxsize:
+            self._cache.popitem(last=False)
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+
+_query_cache = LRUQueryCache(maxsize=128, ttl_seconds=300)
+
+
+def _get_repo(user_id: str | None = None):
+    """Return a repository instance, optionally scoped to a user.
+
+    When ``user_id`` is provided, creates a per-user Qdrant collection
+    (``photos_{user_id}``) and a per-user JSON KB file.  The default
+    (no user_id) returns the global singleton.
+    """
+    if user_id is None:
+        global _repo
+        if _repo is None:
+            try:
+                import sys
+                sys.path.insert(0, str(PROJECT_ROOT))
+                from src.storage import get_repository
+                _repo = get_repository()
+            except Exception:
+                _repo = None
+        return _repo
+
+    # Per-user scoped repo
+    if user_id in _user_repos:
+        return _user_repos[user_id]
+
+    try:
+        import sys
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from src.storage import get_repository
+        collection = f"photos_{user_id}"
+        kb_path = PROJECT_ROOT / "knowledge_base" / f"photo_index_{user_id}.json"
+        repo = get_repository(collection=collection, kb_path=str(kb_path))
+        _user_repos[user_id] = repo
+        return repo
+    except Exception:
+        return None
 
 
 def _load_kb() -> dict:
     global _kb_cache
     if _kb_cache is None:
+        repo = _get_repo()
+        if repo is not None:
+            try:
+                _kb_cache = {
+                    "metadata": repo.metadata(),
+                    "photos": repo.all_photos(),
+                }
+                return _kb_cache
+            except Exception:
+                pass
+        # Fallback to direct JSON read
         with open(KB_PATH) as f:
             _kb_cache = json.load(f)
     return _kb_cache
@@ -110,26 +214,40 @@ class FeedbackRequest(BaseModel):
 # ── Routes: Query ────────────────────────────────────────────────────────
 
 @app.post("/api/query", response_model=QueryResponse)
-async def query(req: QueryRequest):
+async def query(
+    req: QueryRequest,
+    _=Depends(verify_api_key),
+    x_user_id: str | None = Header(None),
+):
     """Execute a query against the PhotoMind knowledge base."""
     start = time.time()
 
     if req.mode == "fast":
-        return _fast_query(req, start)
+        return _fast_query(req, start, user_id=x_user_id)
     elif req.mode == "full":
         return _full_query(req, start)
     else:
         raise HTTPException(400, f"Unknown mode: {req.mode}. Use 'fast' or 'full'.")
 
 
-def _fast_query(req: QueryRequest, start: float) -> dict:
-    """Direct Python search — no OpenAI calls, free, <1s."""
+def _fast_query(req: QueryRequest, start: float, user_id: str | None = None) -> dict:
+    """Direct Python search — no OpenAI calls, free, <1s. Cached."""
+    cache_key = (req.query, req.query_type, req.top_k, user_id)
+    cached = _query_cache.get(cache_key)
+    if cached is not None:
+        cached["latency_s"] = round(time.time() - start, 3)
+        return cached
+
     import sys
     sys.path.insert(0, str(PROJECT_ROOT))
 
     from src.tools.photo_knowledge_base import PhotoKnowledgeBaseTool
 
-    tool = PhotoKnowledgeBaseTool(knowledge_base_path=str(KB_PATH))
+    repo = _get_repo(user_id=user_id)
+    tool = PhotoKnowledgeBaseTool(
+        knowledge_base_path=str(KB_PATH),
+        repository=repo,
+    )
     raw = tool._run(
         query=req.query,
         query_type=req.query_type,
@@ -138,7 +256,7 @@ def _fast_query(req: QueryRequest, start: float) -> dict:
     parsed = json.loads(raw)
     elapsed = time.time() - start
 
-    return {
+    result = {
         "query": req.query,
         "mode": "fast",
         "query_type_detected": parsed.get("query_type_detected", "unknown"),
@@ -151,6 +269,8 @@ def _fast_query(req: QueryRequest, start: float) -> dict:
         "latency_s": round(elapsed, 3),
         "routing_source": parsed.get("routing_rationale", ""),
     }
+    _query_cache.put(cache_key, result)
+    return result
 
 
 def _full_query(req: QueryRequest, start: float) -> dict:
@@ -187,8 +307,20 @@ def _full_query(req: QueryRequest, start: float) -> dict:
 # ── Routes: Knowledge Base ───────────────────────────────────────────────
 
 @app.get("/api/knowledge-base")
-async def get_knowledge_base():
+async def get_knowledge_base(x_user_id: str | None = Header(None)):
     """Return the full knowledge base metadata and photo list."""
+    if x_user_id:
+        repo = _get_repo(user_id=x_user_id)
+        if repo is not None:
+            try:
+                photos = repo.all_photos()
+                return {
+                    "metadata": repo.metadata(),
+                    "total_photos": len(photos),
+                    "photos": photos,
+                }
+            except Exception:
+                pass
     kb = _load_kb()
     return {
         "metadata": kb.get("metadata", {}),
@@ -301,7 +433,7 @@ async def get_rl_eval_results():
 # ── Routes: Feedback ─────────────────────────────────────────────────────
 
 @app.post("/api/feedback")
-async def submit_feedback(req: FeedbackRequest):
+async def submit_feedback(req: FeedbackRequest, _=Depends(verify_api_key)):
     """Record user feedback for the adaptive feedback loop."""
     import sys
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -404,14 +536,30 @@ async def get_architecture():
     }
 
 
+@app.post("/api/cache/clear")
+async def clear_cache(_=Depends(verify_api_key)):
+    """Clear the fast-query LRU cache."""
+    _query_cache.clear()
+    return {"status": "ok", "message": "Query cache cleared"}
+
+
 @app.get("/api/health")
 async def health():
     """Health check."""
     kb = _load_kb()
+    repo = _get_repo()
+    qdrant_status = "disconnected"
+    if repo is not None:
+        try:
+            qdrant_status = f"ok ({repo.__class__.__name__}, {repo.photo_count()} photos)"
+        except Exception:
+            qdrant_status = "error"
     return {
         "status": "ok",
         "knowledge_base_photos": len(kb.get("photos", [])),
         "has_eval_results": EVAL_RESULTS_PATH.exists(),
         "has_ablation_results": ABLATION_PATH.exists(),
         "has_rl_models": (PROJECT_ROOT / "knowledge_base" / "rl_models" / "bandit_thompson.pkl").exists(),
+        "storage_backend": qdrant_status,
+        "query_cache_size": len(_query_cache._cache),
     }

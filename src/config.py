@@ -16,6 +16,16 @@ class PhotoMindSettings(BaseSettings):
         description="Path to the JSON knowledge base"
     )
     daily_budget_usd: float = Field(default=5.00, description="Daily API spend cap")
+    qdrant_url: str = Field(default="http://localhost:6333", description="Qdrant server URL")
+    qdrant_collection: str = Field(default="photos", description="Qdrant collection name")
+    repository_backend: str = Field(
+        default="json",
+        description="Storage backend: 'json' (flat file) or 'qdrant' (vector DB)"
+    )
+    api_key: str = Field(
+        default="",
+        description="Optional API key for server auth. Empty string disables auth."
+    )
 
     class Config:
         env_file = ".env"

@@ -144,5 +144,23 @@ def run_direct_ingest():
     with open(KB_PATH, "w") as f:
         json.dump(kb, f, indent=2)
 
+    # Dual-write: upsert new photos into Qdrant (if available)
+    try:
+        import numpy as np
+        from src.tools.embedding_index import _get_model, _photo_text
+        from src.storage.repository import QdrantPhotoRepository
+
+        model = _get_model()
+        repo = QdrantPhotoRepository(collection="photos")
+        new_records = kb["photos"][-added:]  # last N are the newly added ones
+        for rec in new_records:
+            vec = model.encode(
+                [_photo_text(rec)], normalize_embeddings=True, show_progress_bar=False
+            ).astype(np.float32)[0]
+            repo.upsert_photo(rec, vec)
+        print(f"Qdrant: {added} photos synced to vector DB.")
+    except Exception as e:
+        print(f"Qdrant sync skipped ({e}). Run 'python -m scripts.migrate_to_qdrant' manually.")
+
     print(f"\nDone. {added} new photos indexed. Total: {len(kb['photos'])}.")
     print(f"Knowledge base written to {KB_PATH}")

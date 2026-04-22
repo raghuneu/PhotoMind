@@ -26,7 +26,9 @@ The RL contextual bandit selects among these four strategies at query time,
 and the DQN confidence calibrator grades the result quality.
 """
 
-from typing import Type
+from __future__ import annotations
+
+from typing import Any, Type
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 import json
@@ -96,6 +98,10 @@ class PhotoKnowledgeBaseTool(BaseTool):
     )
     args_schema: Type[BaseModel] = PhotoKBQueryInput
     knowledge_base_path: str = "./knowledge_base/photo_index.json"
+    # Optional repository — when set, live queries use the repo instead of
+    # reading the JSON file on every call.  Left as None for backward compat
+    # (RL simulation passes a raw kb dict directly to search methods).
+    repository: Any = Field(default=None, exclude=True)
 
     def _run(
         self,
@@ -106,17 +112,19 @@ class PhotoKnowledgeBaseTool(BaseTool):
     ) -> str:
         """Execute a query against the photo knowledge base."""
         try:
-            # Validate knowledge base exists
-            if not os.path.exists(self.knowledge_base_path):
+            # Load data: prefer repository, fall back to JSON file
+            if self.repository is not None:
+                kb = {"photos": self.repository.all_photos()}
+            elif not os.path.exists(self.knowledge_base_path):
                 return json.dumps({
                     "error": f"Knowledge base not found at {self.knowledge_base_path}. "
                              "Run the ingestion pipeline first.",
                     "confidence_grade": "F",
                     "confidence_score": 0.0
                 })
-
-            with open(self.knowledge_base_path, "r") as f:
-                kb = json.load(f)
+            else:
+                with open(self.knowledge_base_path, "r") as f:
+                    kb = json.load(f)
 
             if not kb.get("photos"):
                 return json.dumps({
@@ -151,8 +159,18 @@ class PhotoKnowledgeBaseTool(BaseTool):
             aggregation_keywords = ["total", "how much", "spend", "spent", "all", "sum"]
             is_aggregation = any(kw in q_clean for kw in aggregation_keywords)
 
-            # Route to appropriate search strategy
-            if query_type == "factual":
+            # Route to appropriate search strategy.
+            # When a vector-capable repository is available, embedding and
+            # semantic queries upgrade to hybrid (RRF) search automatically.
+            use_hybrid = (
+                self.repository is not None
+                and hasattr(self.repository, "embedding_search")
+                and query_type in ("embedding", "semantic")
+            )
+
+            if use_hybrid:
+                results = self._hybrid_search(query, kb, top_k)
+            elif query_type == "factual":
                 results = self._factual_search(query, kb, top_k)
             elif query_type == "behavioral":
                 results = self._behavioral_search(query, kb, top_k)
@@ -571,18 +589,41 @@ class PhotoKnowledgeBaseTool(BaseTool):
         the query and each photo's combined text (description + OCR + entities).
         Cosine similarity is computed via dot product on L2-normalized vectors.
 
-        This addresses the key limitation of _semantic_search: keyword overlap
-        cannot capture paraphrase equivalence ("expensive meal" != "pricey
-        dinner"), but embedding cosine similarity can.  The RL bandit learns
-        when to prefer embedding search over keyword overlap.
+        When a repository with embedding_search is available (Qdrant), the
+        query vector is sent to the repo for server-side ANN search.  Otherwise
+        falls back to the local npz brute-force index.
         """
         try:
-            from src.tools.embedding_index import EmbeddingIndex
+            from src.tools.embedding_index import _get_model
         except ImportError:
-            # Graceful fallback if sentence-transformers not installed
             return self._semantic_search(query, kb, top_k)
 
         try:
+            model = _get_model()
+            query_vec = model.encode(
+                [query], normalize_embeddings=True, show_progress_bar=False
+            ).astype("float32")[0]
+
+            # Prefer repository vector search (Qdrant ANN)
+            if self.repository is not None and hasattr(self.repository, "embedding_search"):
+                raw_results = self.repository.embedding_search(query_vec, top_k)
+                results = []
+                for r in raw_results:
+                    photo = r.get("photo", {})
+                    results.append({
+                        "photo_id": r["photo_id"],
+                        "photo_path": photo.get("file_path", ""),
+                        "relevance_score": round(r["score"], 3),
+                        "evidence": (
+                            f"Embedding similarity: {r['score']:.3f} | "
+                            f"{photo.get('description', '')[:150]}"
+                        ),
+                        "image_type": photo.get("image_type", "unknown"),
+                    })
+                return results
+
+            # Fallback: local EmbeddingIndex (npz cache)
+            from src.tools.embedding_index import EmbeddingIndex
             idx = EmbeddingIndex(kb_path=self.knowledge_base_path)
             idx.load(photos=kb.get("photos", []))
             raw_results = idx.search(query, top_k=top_k)
@@ -602,6 +643,52 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 "evidence": f"Embedding similarity: {r['score']:.3f} | {r['text_preview'][:150]}",
                 "image_type": photo.get("image_type", "unknown"),
             })
+        return results
+
+    # ── Hybrid Search (RRF) ────────────────────────────────────────────
+
+    def _hybrid_search(
+        self, query: str, kb: dict, top_k: int
+    ) -> list[dict]:
+        """Reciprocal Rank Fusion of embedding + factual results.
+
+        score(doc) = Σ  1 / (k + rank_i)   with k = 60
+
+        Merges the ranked lists from embedding_search (semantic depth) and
+        factual_search (entity precision), producing a single blended list.
+        Only used when a repository with vector search is available.
+        """
+        RRF_K = 60
+
+        # Gather ranked lists from two complementary strategies
+        embedding_results = self._embedding_search(query, kb, top_k=top_k * 2)
+        factual_results = self._factual_search(query, kb, top_k=top_k * 2)
+
+        # Build RRF score map keyed by photo_id
+        rrf_scores: dict[str, float] = {}
+        result_map: dict[str, dict] = {}
+
+        for rank, r in enumerate(embedding_results):
+            pid = r["photo_id"]
+            rrf_scores[pid] = rrf_scores.get(pid, 0.0) + 1.0 / (RRF_K + rank + 1)
+            if pid not in result_map:
+                result_map[pid] = r
+
+        for rank, r in enumerate(factual_results):
+            pid = r["photo_id"]
+            rrf_scores[pid] = rrf_scores.get(pid, 0.0) + 1.0 / (RRF_K + rank + 1)
+            if pid not in result_map:
+                result_map[pid] = r
+
+        # Sort by fused score descending
+        sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)
+
+        results = []
+        for pid in sorted_ids[:top_k]:
+            r = result_map[pid].copy()
+            r["relevance_score"] = round(rrf_scores[pid], 4)
+            r["evidence"] = f"[hybrid/RRF] {r.get('evidence', '')}"
+            results.append(r)
         return results
 
     def _score_to_grade(self, score: float) -> str:

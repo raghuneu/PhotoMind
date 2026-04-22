@@ -11,7 +11,7 @@ A multimodal personal photo knowledge retrieval system built with CrewAI. Turns 
 
 ## What It Does
 
-PhotoMind uses GPT-4o Vision to analyze personal photos (bills, receipts, food photos, screenshots, documents) and builds a searchable JSON knowledge base. Three query modes:
+PhotoMind uses GPT-4o Vision to analyze personal photos (bills, receipts, food photos, screenshots, documents) and builds a searchable knowledge base backed by Qdrant vector DB with hybrid search (dense embedding ANN + keyword matching via Reciprocal Rank Fusion). Three query modes:
 
 - **Factual** — "How much did I spend at ALDI?" → extracts $18.69 from receipt OCR
 - **Semantic** — "Show me photos of pizza" → matches against visual descriptions
@@ -25,11 +25,19 @@ Every answer includes a confidence grade (A–F) and cites the specific source p
 INGESTION CREW (Process.sequential)
   [Scan photos/] → [Analyze with GPT-4o Vision] → [Build JSON knowledge base]
   (--direct flag available for faster batch processing via direct API calls)
+  Dual-write: ingests into both JSON file and Qdrant vector DB simultaneously
 
 QUERY CREW (Process.hierarchical, manager-delegated)
   [Controller] classifies query intent → delegates to specialists
     ├── Task 1: Knowledge Retriever — searches KB with PhotoKnowledgeBaseTool
     └── Task 2: Insight Synthesizer — synthesizes answer with confidence grade + citation
+
+STORAGE LAYER (Repository Pattern)
+  ├── QdrantPhotoRepository (default) — vector DB with hybrid search (RRF)
+  └── JsonPhotoRepository (fallback)  — flat JSON file for offline/RL training
+
+API SERVER (FastAPI)
+  uvicorn api.server:app — REST API with LRU cache, API key auth, multi-user scoping
 
 FEEDBACK LOOP (persistent, adaptive)
   [Eval results] → [FeedbackStore] → adjusts confidence thresholds per strategy
@@ -94,6 +102,10 @@ cp .env.example .env
 
 **Optional:**
 - `SERPER_API_KEY` — enables web search enrichment in answers
+- `REPOSITORY_BACKEND` — `qdrant` (default) or `json` for flat-file fallback
+- `QDRANT_URL` — Qdrant server address (default: `http://localhost:6333`)
+- `QDRANT_COLLECTION` — Qdrant collection name (default: `photos`)
+- `API_KEY` — when set, protects POST endpoints with `X-API-Key` header auth
 
 ### 4. Create directories and add photos
 
@@ -107,6 +119,14 @@ Place 15–25 photos in `photos/`. iPhone photos (HEIC format) are fully support
 - Screenshots from apps or websites (1–2)
 - Documents or notes (1–2)
 
+### 5. Start Qdrant (vector database)
+
+```bash
+docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
+```
+
+Qdrant runs as a local Docker container. The ingestion pipeline auto-creates the `photos` collection on first write. If Qdrant is unavailable, the system falls back to the JSON file backend automatically.
+
 ## Usage
 
 ### Ingest photos
@@ -119,7 +139,7 @@ python -m src.main ingest
 python -m src.main ingest --direct
 ```
 
-Analyzes all photos in `photos/` using GPT-4o Vision and writes `knowledge_base/photo_index.json`. Idempotent — re-running skips already-indexed photos. The default mode uses CrewAI agents for orchestrated ingestion; `--direct` is faster for batch processing.
+Analyzes all photos in `photos/` using GPT-4o Vision and writes to both `knowledge_base/photo_index.json` and the Qdrant vector DB (dual-write). Idempotent — re-running skips already-indexed photos. The default mode uses CrewAI agents for orchestrated ingestion; `--direct` is faster for batch processing.
 
 ### Query the knowledge base
 
@@ -138,6 +158,39 @@ python -m src.main query "Which store do I shop at most often?"
 
 # Edge cases — system should decline gracefully
 python -m src.main query "What was my electric bill?"  # not in library
+```
+
+### Run the API server
+
+```bash
+uvicorn api.server:app --reload --port 8000
+```
+
+The FastAPI server exposes the knowledge base and RL models as a REST API. Two query modes:
+
+- **Fast** (`mode: "fast"`) — direct Python search with RL routing, no OpenAI calls, <1s, free
+- **Full** (`mode: "full"`) — CrewAI pipeline with GPT-4o reasoning, 15–45s, ~$0.01–0.05/query
+
+Key endpoints:
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/query` | POST | API key | Query the knowledge base |
+| `/api/knowledge-base` | GET | — | List all indexed photos |
+| `/api/health` | GET | — | Health check with backend status |
+| `/api/cache/clear` | POST | API key | Clear the LRU query cache |
+| `/api/feedback` | POST | API key | Submit feedback for adaptive thresholds |
+| `/api/eval/results` | GET | — | Latest evaluation results |
+
+**Headers:**
+- `X-API-Key` — required for POST endpoints when `API_KEY` is set in `.env`
+- `X-User-Id` — optional; scopes queries to a per-user Qdrant collection and JSON KB
+
+Example query:
+```bash
+curl -X POST http://localhost:8000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How much did I spend at ALDI?", "mode": "fast"}'
 ```
 
 ### Run the evaluation suite
@@ -258,15 +311,15 @@ confidence_threshold: float = 0.15  # Minimum score to include
 
 ## Evaluation Results
 
-### Base System (25 photos, 20 queries)
+### Base System (25 photos, 20 queries — with Qdrant hybrid search)
 
 | Metric | Score |
 |--------|-------|
-| Retrieval Accuracy | **95%** |
-| Routing Accuracy | **100%** |
-| Silent Failure Rate | **5%** |
+| Retrieval Accuracy | **100%** |
+| Routing Accuracy | **85%** |
+| Silent Failure Rate | **0%** |
 | Decline Accuracy | **100%** |
-| Avg Latency | ~30s/query |
+| Avg Latency | ~46s/query |
 
 ### RL Extension (25 photos, 56 queries, 5 seeds)
 
@@ -283,10 +336,12 @@ Statistical tests (Full RL vs Baseline): silent failure p < 0.0001 (***), declin
 
 ```
 PhotoMind/
+├── api/
+│   └── server.py                    # FastAPI REST API (LRU cache, auth, multi-user)
 ├── src/
 │   ├── main.py                      # CLI entry point (ingest / query / eval / train / rl-eval / ablation)
 │   ├── config.py                    # Pydantic settings (reads .env)
-│   ├── ingest_direct.py             # Direct ingestion (1 API call/photo)
+│   ├── ingest_direct.py             # Direct ingestion (1 API call/photo, dual-write)
 │   ├── agents/
 │   │   └── definitions.py           # 4 agent factory functions
 │   ├── tasks/
@@ -300,6 +355,10 @@ PhotoMind/
 │   │   ├── photo_knowledge_base.py  # PhotoKnowledgeBaseTool (custom) — RL-enhanced
 │   │   ├── query_memory.py          # Query memory and deduplication
 │   │   └── feedback_store.py        # FeedbackStore (adaptive threshold learning)
+│   ├── storage/
+│   │   ├── __init__.py              # Public exports (PhotoRepository, get_repository)
+│   │   ├── repository.py            # ABC + JsonPhotoRepository + QdrantPhotoRepository + factory
+│   │   └── qdrant_client.py         # Qdrant connection helper (hybrid search, RRF)
 │   └── rl/
 │       ├── rl_config.py             # Centralized RL hyperparameters and reward matrix
 │       ├── feature_extractor.py     # Query → 12-dim feature vector
@@ -352,8 +411,9 @@ PhotoMind/
 ## Known Limitations
 
 - Semantic search uses keyword overlap, not true vector embeddings — misses synonyms
-- Knowledge base is a flat JSON file — suitable up to ~500 photos; use a vector DB beyond that
+- Qdrant backend requires Docker; falls back to flat JSON if unavailable
 - Confidence grading is calibrated for a small corpus — thresholds may need tuning at scale
 - RL bandit trained on 56 queries with 10x augmentation — may not generalize to unseen phrasing patterns outside the training distribution
 - DQN requery action selects an alternate strategy randomly rather than learning which alternate to try; a learned requery policy could improve multi-step episode returns
 - Bandit context clustering uses k=4 clusters on a small feature space — more data would support finer-grained contextualization
+- Multi-user scoping creates separate Qdrant collections per user — no shared cross-user search
