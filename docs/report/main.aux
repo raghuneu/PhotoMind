@@ -1,0 +1,182 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{5}{section.1}\protected@file@percent }
+\newlabel{sec:introduction}{{1}{5}{Introduction}{section.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Core Capabilities}{5}{subsection.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Real-World Use Cases}{5}{subsection.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Project Scope and Contributions}{5}{subsection.1.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}System Architecture}{5}{section.2}\protected@file@percent }
+\newlabel{sec:architecture}{{2}{5}{System Architecture}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}High-Level Architecture}{5}{subsection.2.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces High-level system architecture showing ingestion and query pipelines.}}{6}{figure.caption.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:high-level-arch}{{1}{6}{High-level system architecture showing ingestion and query pipelines}{figure.caption.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Data Flow}{6}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Ingestion Pipeline.}{6}{subsection.2.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Ingestion data flow: scan $\to $ analyze $\to $ index.}}{7}{figure.caption.2}\protected@file@percent }
+\newlabel{fig:ingestion-flow}{{2}{7}{Ingestion data flow: scan $\to $ analyze $\to $ index}{figure.caption.2}{}}
+\@writefile{toc}{\contentsline {paragraph}{Query Pipeline.}{8}{figure.caption.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Query data flow with RL-enhanced retrieval.}}{9}{figure.caption.3}\protected@file@percent }
+\newlabel{fig:query-flow}{{3}{9}{Query data flow with RL-enhanced retrieval}{figure.caption.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Architecture with RL Components}{10}{subsection.2.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces System architecture with RL components: contextual bandit (routing) + DQN (confidence).}}{11}{figure.caption.4}\protected@file@percent }
+\newlabel{fig:rl-arch}{{4}{11}{System architecture with RL components: contextual bandit (routing) + DQN (confidence)}{figure.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Memory Architecture}{12}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Agent Design}{12}{section.3}\protected@file@percent }
+\newlabel{sec:agents}{{3}{12}{Agent Design}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Controller Agent (Query Crew Manager)}{12}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Photo Analyst (Ingestion Crew)}{12}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Knowledge Retriever}{12}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Insight Synthesizer}{12}{subsection.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Agent Collaboration Pattern}{12}{subsection.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Tool Integration}{13}{section.4}\protected@file@percent }
+\newlabel{sec:tools}{{4}{13}{Tool Integration}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Built-in Tools}{13}{subsection.4.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Built-in CrewAI tools used by PhotoMind agents.}}{13}{table.caption.5}\protected@file@percent }
+\newlabel{tab:builtin-tools}{{1}{13}{Built-in CrewAI tools used by PhotoMind agents}{table.caption.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Custom Vision Tool (\texttt  {PhotoVisionTool})}{13}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Custom Knowledge Base Tool (\texttt  {PhotoKnowledgeBaseTool})}{13}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Input/Output Schema}{13}{subsubsection.4.3.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces PhotoKnowledgeBaseTool input parameters.}}{13}{table.caption.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Search Strategies}{13}{section.5}\protected@file@percent }
+\newlabel{sec:search-strategies}{{5}{13}{Search Strategies}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Factual Search}{14}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Semantic Search}{14}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Behavioral Search}{14}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Embedding Search (New)}{14}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Confidence Grading}{15}{subsection.5.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Confidence grading thresholds.}}{15}{table.caption.7}\protected@file@percent }
+\newlabel{tab:confidence-grades}{{3}{15}{Confidence grading thresholds}{table.caption.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Orchestration Design}{15}{section.6}\protected@file@percent }
+\newlabel{sec:orchestration}{{6}{15}{Orchestration Design}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Ingestion Crew (Sequential)}{15}{subsection.6.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Ingestion pipeline task chain.}}{15}{lstlisting.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Query Crew (Hierarchical with Planning)}{15}{subsection.6.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {2}{\ignorespaces Query pipeline with hierarchical delegation.}}{15}{lstlisting.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Feedback Loop}{15}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Communication Protocols}{15}{subsection.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Reinforcement Learning Extension}{16}{section.7}\protected@file@percent }
+\newlabel{sec:rl}{{7}{16}{Reinforcement Learning Extension}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Motivation}{16}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}RL Approach 1: Contextual Bandits}{16}{subsection.7.2}\protected@file@percent }
+\newlabel{sec:bandit}{{7.2}{16}{RL Approach 1: Contextual Bandits}{subsection.7.2}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.1}Problem Formulation}{16}{subsubsection.7.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.2}Context Clustering}{16}{subsubsection.7.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.3}Feature Extractor}{16}{subsubsection.7.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.4}Cluster Count Selection ($k=4$)}{16}{subsubsection.7.2.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Silhouette analysis for cluster count selection.}}{17}{table.caption.8}\protected@file@percent }
+\newlabel{tab:silhouette}{{4}{17}{Silhouette analysis for cluster count selection}{table.caption.8}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.5}Thompson Sampling}{17}{subsubsection.7.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.6}UCB1}{17}{subsubsection.7.2.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.2.7}Bandit Reward Function}{17}{subsubsection.7.2.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}RL Approach 2: DQN Confidence Calibrator}{18}{subsection.7.3}\protected@file@percent }
+\newlabel{sec:dqn}{{7.3}{18}{RL Approach 2: DQN Confidence Calibrator}{subsection.7.3}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.1}MDP Formulation}{18}{subsubsection.7.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.2}Multi-Step Bellman Equation}{18}{subsubsection.7.3.2}\protected@file@percent }
+\newlabel{eq:bellman-requery}{{10}{18}{Multi-Step Bellman Equation}{equation.10}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.3}Q-Network Architecture}{18}{subsubsection.7.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.4}TD Learning}{18}{subsubsection.7.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.5}Reward Matrix}{19}{subsubsection.7.3.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces DQN reward matrix. Silent failures (accept\_high on wrong retrieval) receive the maximum penalty of $-1.0$; correct declines receive the maximum reward of $+1.0$.}}{19}{table.caption.9}\protected@file@percent }
+\newlabel{tab:reward-matrix}{{5}{19}{DQN reward matrix. Silent failures (accept\_high on wrong retrieval) receive the maximum penalty of $-1.0$; correct declines receive the maximum reward of $+1.0$}{table.caption.9}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.6}Hyperparameters}{19}{subsubsection.7.3.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces DQN hyperparameters with LunarLander comparison.}}{19}{table.caption.10}\protected@file@percent }
+\newlabel{tab:hyperparams}{{6}{19}{DQN hyperparameters with LunarLander comparison}{table.caption.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Offline Simulation Environment}{19}{subsection.7.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Training and evaluation pipeline. All RL training runs offline with \$0 API cost.}}{20}{figure.caption.11}\protected@file@percent }
+\newlabel{fig:training-pipeline}{{5}{20}{Training and evaluation pipeline. All RL training runs offline with \$0 API cost}{figure.caption.11}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Base System Performance}{20}{section.8}\protected@file@percent }
+\newlabel{sec:base-performance}{{8}{20}{Base System Performance}{section.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Evaluation Setup}{20}{subsection.8.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Results}{20}{subsection.8.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Base system performance on 20 hand-labeled queries.}}{20}{table.caption.12}\protected@file@percent }
+\newlabel{tab:base-results}{{7}{20}{Base system performance on 20 hand-labeled queries}{table.caption.12}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Per-Category Breakdown}{20}{subsection.8.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Base system per-category performance.}}{20}{table.caption.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}RL Experimental Results}{21}{section.9}\protected@file@percent }
+\newlabel{sec:results}{{9}{21}{RL Experimental Results}{section.9}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Training Convergence}{21}{subsection.9.1}\protected@file@percent }
+\newlabel{fig:dqn-rewards}{{6a}{21}{DQN reward per episode across 5 seeds. Convergence to $\sim $0.76 within 500 episodes}{figure.caption.14}{}}
+\newlabel{sub@fig:dqn-rewards}{{a}{21}{DQN reward per episode across 5 seeds. Convergence to $\sim $0.76 within 500 episodes}{figure.caption.14}{}}
+\newlabel{fig:bandit-regret}{{6b}{21}{Cumulative regret for Thompson Sampling across 5 seeds. Sub-linear growth confirms learning}{figure.caption.14}{}}
+\newlabel{sub@fig:bandit-regret}{{b}{21}{Cumulative regret for Thompson Sampling across 5 seeds. Sub-linear growth confirms learning}{figure.caption.14}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Training convergence metrics.}}{21}{figure.caption.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Primary Result: Recommended Configuration}{21}{subsection.9.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Recommended configuration vs.\ baseline on the full 56-query evaluation set.}}{21}{table.caption.15}\protected@file@percent }
+\newlabel{tab:recommended}{{9}{21}{Recommended configuration vs.\ baseline on the full 56-query evaluation set}{table.caption.15}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Ablation Study}{21}{subsection.9.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Ablation study results (42 training queries, 5 seeds, 95\% CIs).}}{21}{table.caption.16}\protected@file@percent }
+\newlabel{tab:ablation}{{10}{21}{Ablation study results (42 training queries, 5 seeds, 95\% CIs)}{table.caption.16}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Ablation comparison: grouped bar chart across all 7 configs and 4 metrics with 95\% CIs.}}{22}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:ablation}{{7}{22}{Ablation comparison: grouped bar chart across all 7 configs and 4 metrics with 95\% CIs}{figure.caption.17}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Statistical Significance}{22}{subsection.9.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Statistical significance testing (Full RL vs.\ Baseline).}}{22}{table.caption.18}\protected@file@percent }
+\newlabel{tab:significance}{{11}{22}{Statistical significance testing (Full RL vs.\ Baseline)}{table.caption.18}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}Learning Dynamics Visualizations}{23}{subsection.9.5}\protected@file@percent }
+\newlabel{fig:posteriors}{{8a}{23}{Thompson Sampling Beta posteriors per arm per cluster}{figure.caption.19}{}}
+\newlabel{sub@fig:posteriors}{{a}{23}{Thompson Sampling Beta posteriors per arm per cluster}{figure.caption.19}{}}
+\newlabel{fig:per-category}{{8b}{23}{Per-category routing accuracy over training episodes}{figure.caption.19}{}}
+\newlabel{sub@fig:per-category}{{b}{23}{Per-category routing accuracy over training episodes}{figure.caption.19}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Bandit learning dynamics.}}{23}{figure.caption.19}\protected@file@percent }
+\newlabel{fig:action-dist}{{9a}{23}{DQN action distribution evolution across training}{figure.caption.20}{}}
+\newlabel{sub@fig:action-dist}{{a}{23}{DQN action distribution evolution across training}{figure.caption.20}{}}
+\newlabel{fig:epsilon}{{9b}{23}{Epsilon decay curve with episode reward overlay}{figure.caption.20}{}}
+\newlabel{sub@fig:epsilon}{{b}{23}{Epsilon decay curve with episode reward overlay}{figure.caption.20}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces DQN learning dynamics.}}{23}{figure.caption.20}\protected@file@percent }
+\newlabel{fig:regret-compare}{{10a}{23}{Cumulative regret comparison: Thompson vs.\ UCB1 vs.\ $\varepsilon $-Greedy}{figure.caption.21}{}}
+\newlabel{sub@fig:regret-compare}{{a}{23}{Cumulative regret comparison: Thompson vs.\ UCB1 vs.\ $\varepsilon $-Greedy}{figure.caption.21}{}}
+\newlabel{fig:routing-conv}{{10b}{23}{Routing accuracy convergence for Thompson Sampling}{figure.caption.21}{}}
+\newlabel{sub@fig:routing-conv}{{b}{23}{Routing accuracy convergence for Thompson Sampling}{figure.caption.21}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Exploration strategy comparison.}}{23}{figure.caption.21}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Before/after comparison: baseline rule-based system vs.\ Recommended (Rule+DQN) after 2{,}000 episodes.}}{24}{figure.caption.22}\protected@file@percent }
+\newlabel{fig:before-after}{{11}{24}{Before/after comparison: baseline rule-based system vs.\ Recommended (Rule+DQN) after 2{,}000 episodes}{figure.caption.22}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Held-Out Generalization}{24}{subsection.9.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Held-out per-category breakdown (Recommended config, 14 queries, 5 seeds).}}{24}{table.caption.23}\protected@file@percent }
+\newlabel{tab:heldout}{{12}{24}{Held-out per-category breakdown (Recommended config, 14 queries, 5 seeds)}{table.caption.23}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.7}Cross-Seed Variance Analysis}{25}{subsection.9.7}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Cross-seed variance for Recommended and Full RL configs (56-query evaluation).}}{25}{table.caption.24}\protected@file@percent }
+\newlabel{tab:cross-seed}{{13}{25}{Cross-seed variance for Recommended and Full RL configs (56-query evaluation)}{table.caption.24}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {10}Discussion}{25}{section.10}\protected@file@percent }
+\newlabel{sec:discussion}{{10}{25}{Discussion}{section.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.1}When RL Helps}{25}{subsection.10.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.2}Multi-Step Requery Dynamics}{25}{subsection.10.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.3}Per-Category RL Impact}{25}{subsection.10.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Per-category RL impact. The DQN's effect concentrates on semantic (4.2\%$\to $0.0\%), edge (4.5\%$\to $0.9\%), and ambiguous (7.1\%$\to $0.0\%) categories.}}{25}{table.caption.25}\protected@file@percent }
+\newlabel{tab:per-category-rl}{{14}{25}{Per-category RL impact. The DQN's effect concentrates on semantic (4.2\%$\to $0.0\%), edge (4.5\%$\to $0.9\%), and ambiguous (7.1\%$\to $0.0\%) categories}{table.caption.25}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.4}Bandit $\times $ DQN Interaction Effects}{26}{subsection.10.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.5}Routing Accuracy Regression Analysis}{26}{subsection.10.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.6}Why Rule+DQN Outperforms Full RL}{26}{subsection.10.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.7}Cost Analysis}{26}{subsection.10.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {11}Scaling Analysis}{27}{section.11}\protected@file@percent }
+\newlabel{sec:scaling}{{11}{27}{Scaling Analysis}{section.11}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Component latencies (Apple M-series CPU, PyTorch CPU inference).}}{27}{table.caption.26}\protected@file@percent }
+\newlabel{tab:scaling}{{15}{27}{Component latencies (Apple M-series CPU, PyTorch CPU inference)}{table.caption.26}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {12}React Frontend and FastAPI Backend}{27}{section.12}\protected@file@percent }
+\newlabel{sec:frontend}{{12}{27}{React Frontend and FastAPI Backend}{section.12}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {12.1}Architecture}{27}{subsection.12.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {12.2}Dual Query Modes}{27}{subsection.12.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces Fast vs.\ full query mode comparison.}}{27}{table.caption.27}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {12.3}API Endpoints}{28}{subsection.12.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {13}Challenges and Solutions}{28}{section.13}\protected@file@percent }
+\newlabel{sec:challenges}{{13}{28}{Challenges and Solutions}{section.13}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {14}Threats to Validity}{28}{section.14}\protected@file@percent }
+\newlabel{sec:threats}{{14}{28}{Threats to Validity}{section.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.1}Internal Validity}{28}{subsection.14.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.2}External Validity}{29}{subsection.14.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.3}Construct Validity}{29}{subsection.14.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.4}Statistical Conclusion Validity}{29}{subsection.14.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {15}Ethical Considerations}{29}{section.15}\protected@file@percent }
+\newlabel{sec:ethics}{{15}{29}{Ethical Considerations}{section.15}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {16}Future Work}{30}{section.16}\protected@file@percent }
+\newlabel{sec:future}{{16}{30}{Future Work}{section.16}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.1}Immediate Extensions}{30}{subsection.16.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.2}Production Deployment Roadmap}{30}{subsection.16.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.3}Research Directions}{30}{subsection.16.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {17}Reproducibility}{30}{section.17}\protected@file@percent }
+\newlabel{sec:reproducibility}{{17}{30}{Reproducibility}{section.17}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {3}{\ignorespaces Complete reproduction pipeline.}}{30}{lstlisting.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {18}Conclusion}{31}{section.18}\protected@file@percent }
+\newlabel{sec:conclusion}{{18}{31}{Conclusion}{section.18}{}}
+\gdef \@abspage@last{31}

@@ -2,12 +2,12 @@
 PhotoKnowledgeBaseTool — Custom tool for PhotoMind.
 
 Searches the personal photo knowledge base with query-intent routing,
-confidence scoring (A-F), and source photo attribution. Implements three
-distinct search strategies: factual, semantic, and behavioral.
+confidence scoring (A-F), and source photo attribution. Implements four
+distinct search strategies: factual, semantic, behavioral, and embedding.
 
 Inputs:
   - query (str): Natural language question about the user's photos
-  - query_type (str): "factual", "semantic", "behavioral", or "auto"
+  - query_type (str): "factual", "semantic", "behavioral", "embedding", or "auto"
   - top_k (int): Number of results to return (default 3)
   - confidence_threshold (float): Minimum score to include (default 0.3)
 
@@ -15,11 +15,15 @@ Outputs:
   - JSON with: query_type_detected, results[], confidence_grade (A-F),
     confidence_score, answer_summary, source_photos[], warning (if low confidence)
 
-Limitations:
-  - Semantic search uses keyword overlap, not true embeddings (JSONSearchTool
-    handles embedding-based search separately)
-  - Behavioral analysis is limited to frequency counts across the indexed corpus
-  - Confidence calibration depends on the eval harness — thresholds may need tuning
+Search Strategy Overview:
+  - factual: Entity + OCR keyword matching for precise fact extraction
+  - semantic: Weighted keyword overlap with descriptions (fast, deterministic)
+  - embedding: Dense vector cosine similarity via all-MiniLM-L6-v2 (captures
+    paraphrases, zero API cost, runs locally)
+  - behavioral: Frequency aggregation across the indexed corpus
+
+The RL contextual bandit selects among these four strategies at query time,
+and the DQN confidence calibrator grades the result quality.
 """
 
 from typing import Type
@@ -80,13 +84,15 @@ class PhotoKnowledgeBaseTool(BaseTool):
 
     name: str = "photo_knowledge_base"
     description: str = (
-        "Searches the PhotoMind personal photo knowledge base. Supports three "
+        "Searches the PhotoMind personal photo knowledge base. Supports four "
         "query types: 'factual' for extracting specific facts from photos "
         "(bill amounts, dates, vendor names), 'semantic' for finding photos by "
-        "meaning or visual description, and 'behavioral' for analyzing patterns "
-        "across photos (most photographed food, spending trends). "
-        "Returns results with confidence scores and source photo attribution. "
-        "ALWAYS use this tool when answering questions about the user's photos."
+        "keyword overlap with descriptions, 'embedding' for dense vector "
+        "similarity search (paraphrases, conceptual matches), and 'behavioral' "
+        "for analyzing patterns across photos (most photographed food, spending "
+        "trends). Returns results with confidence scores and source photo "
+        "attribution. ALWAYS use this tool when answering questions about the "
+        "user's photos."
     )
     args_schema: Type[BaseModel] = PhotoKBQueryInput
     knowledge_base_path: str = "./knowledge_base/photo_index.json"
@@ -150,6 +156,8 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 results = self._factual_search(query, kb, top_k)
             elif query_type == "behavioral":
                 results = self._behavioral_search(query, kb, top_k)
+            elif query_type == "embedding":
+                results = self._embedding_search(query, kb, top_k)
             else:
                 results = self._semantic_search(query, kb, top_k)
 
@@ -261,7 +269,8 @@ class PhotoKnowledgeBaseTool(BaseTool):
                     "factual": self._factual_search,
                     "semantic": self._semantic_search,
                     "behavioral": self._behavioral_search,
-                }[new_strategy]
+                    "embedding": self._embedding_search,
+                }.get(new_strategy, self._semantic_search)
                 results = search_fn(query, kb, top_k=5)
                 current_strategy_idx = new_arm
                 state = ConfidenceState.from_retrieval(results, new_arm, features)
@@ -555,7 +564,45 @@ class PhotoKnowledgeBaseTool(BaseTool):
         results.sort(key=lambda x: x["relevance_score"], reverse=True)
         return results[:top_k]
 
-    # ── Confidence Scoring ───────────────────────────────────────────────
+    def _embedding_search(self, query: str, kb: dict, top_k: int) -> list:
+        """Dense vector similarity search using sentence-transformers.
+
+        Uses all-MiniLM-L6-v2 (384-dim, local, zero API cost) to encode both
+        the query and each photo's combined text (description + OCR + entities).
+        Cosine similarity is computed via dot product on L2-normalized vectors.
+
+        This addresses the key limitation of _semantic_search: keyword overlap
+        cannot capture paraphrase equivalence ("expensive meal" != "pricey
+        dinner"), but embedding cosine similarity can.  The RL bandit learns
+        when to prefer embedding search over keyword overlap.
+        """
+        try:
+            from src.tools.embedding_index import EmbeddingIndex
+        except ImportError:
+            # Graceful fallback if sentence-transformers not installed
+            return self._semantic_search(query, kb, top_k)
+
+        try:
+            idx = EmbeddingIndex(kb_path=self.knowledge_base_path)
+            idx.load(photos=kb.get("photos", []))
+            raw_results = idx.search(query, top_k=top_k)
+        except Exception:
+            return self._semantic_search(query, kb, top_k)
+
+        # Build a photo lookup for enriching results
+        photo_map = {p["id"]: p for p in kb.get("photos", [])}
+
+        results = []
+        for r in raw_results:
+            photo = photo_map.get(r["photo_id"], {})
+            results.append({
+                "photo_id": r["photo_id"],
+                "photo_path": photo.get("file_path", ""),
+                "relevance_score": round(r["score"], 3),
+                "evidence": f"Embedding similarity: {r['score']:.3f} | {r['text_preview'][:150]}",
+                "image_type": photo.get("image_type", "unknown"),
+            })
+        return results
 
     def _score_to_grade(self, score: float) -> str:
         """Convert numeric score to letter grade.

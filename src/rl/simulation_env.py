@@ -1,7 +1,8 @@
 """Offline simulation environment for RL training.
 
-Pre-computes all 3 search strategies on all queries (pure Python, zero API
-calls) and provides a gym-like reset/step interface for bandit and DQN training.
+Pre-computes all 4 search strategies (factual, semantic, behavioral, embedding)
+on all queries (pure Python, zero API calls) and provides a gym-like reset/step
+interface for bandit and DQN training.
 """
 
 import json
@@ -86,7 +87,7 @@ class PhotoMindSimulator:
         self._current_features = None
 
     def _precompute_all_strategies(self):
-        """Run all 3 search strategies on every query. Zero API calls."""
+        """Run all 4 search strategies on every query. Zero API calls."""
         from src.tools.photo_knowledge_base import PhotoKnowledgeBaseTool
 
         tool = PhotoKnowledgeBaseTool(knowledge_base_path=self.kb_path)
@@ -99,6 +100,7 @@ class PhotoMindSimulator:
                 "factual": tool._factual_search(query, self.kb, top_k=5),
                 "semantic": tool._semantic_search(query, self.kb, top_k=5),
                 "behavioral": tool._behavioral_search(query, self.kb, top_k=5),
+                "embedding": tool._embedding_search(query, self.kb, top_k=5),
             }
 
     def _augment_queries(self, factor: int):

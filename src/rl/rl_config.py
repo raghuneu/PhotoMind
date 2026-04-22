@@ -3,8 +3,8 @@
 import os
 
 # ── Bandit Config ────────────────────────────────────────────────────
-N_ARMS = 3
-ARM_NAMES = ["factual", "semantic", "behavioral"]
+N_ARMS = 4
+ARM_NAMES = ["factual", "semantic", "behavioral", "embedding"]
 # k=4 selected via silhouette analysis over k ∈ {2,3,4,5,6,8};
 # see contextual_bandit.fit_clusters() and TECHNICAL_REPORT.md §10.3.
 N_CONTEXT_CLUSTERS = 4
