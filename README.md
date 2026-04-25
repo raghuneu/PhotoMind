@@ -1,13 +1,19 @@
 # PhotoMind
 
-> **Take-Home Final: Reinforcement Learning for Agentic AI Systems**
-> This project is the submission for the take-home final. The work lives on the `FinalProject` branch
+> **Generative AI Project Assignment**
+> This repository contains code for three incrementally developed assignments, each on its own branch:
+>
+> | Assignment | Branch |
+> |---|---|
+> | **Generative AI Project Assignment** (Final Project) | [`main`](https://github.com/raghuneu/PhotoMind) ← *you are here* |
+> | Take-Home Final: Reinforcement Learning for Agentic AI Systems | [`feature/reinforcement-learning-extension`](https://github.com/raghuneu/PhotoMind/tree/feature/reinforcement-learning-extension) |
+> | Building Agentic Systems Assignment | [`feature/building_agentic_systems_assignment`](https://github.com/raghuneu/PhotoMind/tree/feature/building_agentic_systems_assignment) |
 
 A multimodal personal photo knowledge retrieval system built with CrewAI. Turns your phone's photo library into a queryable knowledge base — ask natural-language questions, get answers with confidence scores and source attribution.
 
-**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind/tree/FinalProject) · **Demo:** [youtu.be/UQRdkW2mAgc](https://www.youtube.com/watch?v=UQRdkW2mAgc)
+**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind) · **Demo:** [youtu.be/UQRdkW2mAgc](https://www.youtube.com/watch?v=UQRdkW2mAgc)
 
-[![Demo Video](Photomind_withRL.png)](https://www.youtube.com/watch?v=UQRdkW2mAgc)
+[![PhotoMind](Photomind.png)](https://www.youtube.com/watch?v=UQRdkW2mAgc)
 
 ## What It Does
 
@@ -385,13 +391,15 @@ PhotoMind/
 │   ├── plot_regret.py               # Cumulative regret comparison (3 bandit types)
 │   ├── plot_before_after.py         # Before/after RL comparison plots
 │   ├── generate_diagrams.py         # Architecture and flow diagrams
-│   └── figures/                     # Generated PNG and PDF figures
+│   ├── figures/                     # Generated PNG and PDF figures
+│   └── diagrams/                    # Mermaid diagram sources (.mmd)
 ├── scripts/
 │   ├── train_full.py                # Full training + optional ablation
 │   ├── train_bandit.py              # Standalone bandit training
 │   ├── train_dqn.py                 # Standalone DQN training
 │   ├── precompute_cache.py          # Pre-compute search strategy cache
 │   ├── scaling_benchmark.py         # Scaling and performance benchmarks
+│   ├── migrate_to_qdrant.py         # JSON → Qdrant migration utility
 │   └── demo_comparison.py           # Rule-based vs RL before/after demo
 ├── knowledge_base/
 │   ├── photo_index.json             # 53 indexed photos
@@ -412,13 +420,13 @@ PhotoMind/
 ├── docs/
 │   ├── figures/                         # Copied figures for GitHub Pages
 │   ├── math_formulations.md             # Mathematical formulations for RL components
-│   └── mermaid_diagrams/                # Mermaid diagram sources
+│   ├── mermaid_diagrams/                # Mermaid diagram sources
+│   └── report/                          # LaTeX technical report (main.tex → main.pdf)
 ├── Dockerfile                           # Multi-stage build (Node frontend + Python backend)
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
-├── PROJECT_RETROSPECTIVE.md             # Project retrospective and lessons learned
 ├── requirements.txt
 └── TECHNICAL_REPORT.md                  # Full technical documentation (base system + RL extension)
 ```
