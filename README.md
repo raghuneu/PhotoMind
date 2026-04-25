@@ -49,13 +49,13 @@ PhotoMind turns your phone's photo library into a queryable knowledge base. It a
 </div>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=UQRdkW2mAgc">
+  <a href="https://youtu.be/XMeceeWHjCE">
     <img src="Photomind.png" alt="PhotoMind Demo" width="90%"/>
   </a>
 </p>
 
 <p align="center">
-  <strong>Repository:</strong> <a href="https://github.com/raghuneu/PhotoMind">github.com/raghuneu/PhotoMind</a> · <strong>Demo:</strong> <a href="https://www.youtube.com/watch?v=UQRdkW2mAgc">youtu.be/UQRdkW2mAgc</a>
+  <strong>Repository:</strong> <a href="https://github.com/raghuneu/PhotoMind">github.com/raghuneu/PhotoMind</a> · <strong>Demo:</strong> <a href="https://youtu.be/XMeceeWHjCE">youtu.be/XMeceeWHjCE</a>
 </p>
 
 ---

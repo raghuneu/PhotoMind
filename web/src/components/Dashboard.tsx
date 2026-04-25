@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import {
   Paper, Stack, Typography, Box, Skeleton, Divider,
   Table, TableHead, TableBody, TableRow, TableCell, TableContainer,
+  Dialog, DialogContent, IconButton,
 } from '@mui/material'
+import CloseIcon from '@mui/icons-material/Close'
+import { alpha } from '@mui/material/styles'
 import Grid from '@mui/material/Grid2'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -45,6 +48,7 @@ export default function Dashboard() {
   const [ablation, setAblation] = useState<Record<string, unknown> | null>(null)
   const [figures, setFigures] = useState<{ name: string; filename: string; format: string }[]>([])
   const [loading, setLoading] = useState(true)
+  const [openFig, setOpenFig] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.allSettled([
@@ -244,7 +248,7 @@ export default function Dashboard() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: i * 0.05 }}
                 >
-                  <Paper sx={{ overflow: 'hidden', borderRadius: 2 }}>
+                  <Paper sx={{ overflow: 'hidden', borderRadius: 2, cursor: 'pointer' }} onClick={() => setOpenFig(fig.filename)}>
                     <Box component="img" src={`/api/figures/${fig.filename}`} alt={fig.name} loading="lazy" sx={{ width: '100%', display: 'block', background: NPR.surface }} />
                     <Divider />
                     <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, py: 1, display: 'block' }}>
@@ -257,6 +261,26 @@ export default function Dashboard() {
           </Grid>
         </Paper>
       )}
+
+      <Dialog
+        open={!!openFig}
+        onClose={() => setOpenFig(null)}
+        maxWidth={false}
+        PaperProps={{ sx: { bgcolor: 'transparent', boxShadow: 'none', maxWidth: '90vw', maxHeight: '90vh' } }}
+        slotProps={{ backdrop: { sx: { bgcolor: alpha(NPR.midnight, 0.92) } } }}
+      >
+        <IconButton
+          onClick={() => setOpenFig(null)}
+          sx={{ position: 'absolute', top: 8, right: 8, color: NPR.white, bgcolor: alpha(NPR.midnight, 0.5), '&:hover': { bgcolor: alpha(NPR.midnight, 0.7) }, zIndex: 10 }}
+        >
+          <CloseIcon />
+        </IconButton>
+        <DialogContent sx={{ p: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {openFig && (
+            <Box component="img" src={`/api/figures/${openFig}`} alt="Figure" sx={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: 1 }} />
+          )}
+        </DialogContent>
+      </Dialog>
     </Stack>
   )
 }
