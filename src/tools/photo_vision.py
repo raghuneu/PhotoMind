@@ -51,7 +51,21 @@ class PhotoVisionInput(BaseModel):
 
 
 class PhotoVisionTool(BaseTool):
-    """Analyze images using GPT-4o Vision. Supports HEIC, PNG, JPG, WEBP."""
+    """Analyze images using GPT-4o Vision. Supports HEIC, PNG, JPG, WEBP.
+
+    Error-handling contract
+    ----------------------
+    All failures are returned as structured error strings (never raised),
+    so the calling agent always receives a parseable response.  Three
+    failure classes are handled:
+
+    * **Validation errors** (missing key, missing file) — instant return
+      with a descriptive prefix ``"Error: ..."``.
+    * **Transient API errors** (timeout, rate-limit 429, server 5xx) —
+      retried up to ``_MAX_API_RETRIES`` times with exponential backoff.
+    * **Permanent API errors** (auth 401, bad request 400) — returned
+      immediately without retry.
+    """
 
     name: str = "photo_vision"
     description: str = (
@@ -61,6 +75,19 @@ class PhotoVisionTool(BaseTool):
         "score. Use this for every photo during ingestion."
     )
     args_schema: Type[BaseModel] = PhotoVisionInput
+
+    _MAX_API_RETRIES: int = 2
+    _RETRY_BACKOFF_BASE: float = 1.0  # seconds
+
+    @staticmethod
+    def _handle_tool_error(image_path: str, error: Exception) -> str:
+        """Standardized error formatting for all tool failures.
+
+        Returns a structured error string that downstream agents can parse
+        to distinguish validation errors from API errors.
+        """
+        error_type = type(error).__name__
+        return f"Error [{error_type}] analyzing image {image_path}: {error}"
 
     def _run(self, image_path: str, analysis_prompt: str = _DEFAULT_PROMPT) -> str:
         try:
@@ -83,20 +110,38 @@ class PhotoVisionTool(BaseTool):
             b64 = base64.b64encode(buf.getvalue()).decode()
 
             client = OpenAI(api_key=api_key)
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": analysis_prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                    ],
-                }],
-                max_tokens=1000,
-            )
-            return response.choices[0].message.content
+
+            # Retry loop for transient API errors (429 rate-limit, 5xx)
+            import time
+            last_error = None
+            for attempt in range(self._MAX_API_RETRIES + 1):
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": analysis_prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                            ],
+                        }],
+                        max_tokens=1000,
+                        timeout=30.0,
+                    )
+                    return response.choices[0].message.content
+                except Exception as api_err:
+                    last_error = api_err
+                    err_str = str(api_err).lower()
+                    # Only retry on transient errors
+                    is_transient = any(kw in err_str for kw in ["429", "rate", "timeout", "502", "503", "504"])
+                    if is_transient and attempt < self._MAX_API_RETRIES:
+                        time.sleep(self._RETRY_BACKOFF_BASE * (2 ** attempt))
+                        continue
+                    break
+
+            return self._handle_tool_error(image_path, last_error)
 
         except FileNotFoundError:
             return f"Error: Image file not found at path: {image_path}"
         except Exception as e:
-            return f"Error analyzing image {image_path}: {str(e)}"
+            return self._handle_tool_error(image_path, e)

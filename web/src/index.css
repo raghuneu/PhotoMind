@@ -1,0 +1,77 @@
+/* NPR brand palette — light theme
+ * Heliconia     #F15B1C
+ * Jay Blue      #4C85C5
+ * Midnight Black #00000F
+ * Full White    #FFFFFF
+ */
+
+:root {
+  --npr-heliconia: #F15B1C;
+  --npr-jay-blue: #4C85C5;
+  --npr-midnight: #00000F;
+  --npr-white: #FFFFFF;
+  --npr-paper: #FFFFFF;
+  --npr-surface: #F7F7F8;
+  --npr-border: rgba(0, 0, 15, 0.12);
+  color-scheme: light;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  background: var(--npr-white);
+  color: var(--npr-midnight);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Animated background shimmer used behind the logo aperture */
+@keyframes aperture-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(241, 91, 28, 0.45); }
+  50%      { box-shadow: 0 0 0 10px rgba(241, 91, 28, 0); }
+}
+
+/* Traveling dot along a path (pipeline diagram) */
+@keyframes flow-dot {
+  0%   { left: 4%;  opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: 96%; opacity: 0; }
+}
+
+/* Photo film-strip loader */
+@keyframes film-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Shimmer sweep across skeletons */
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to   { background-position: 400px 0; }
+}
+
+/* Grade badge reveal: pop + halo */
+@keyframes grade-pop {
+  0%   { transform: scale(0.6) rotate(-8deg); opacity: 0; }
+  60%  { transform: scale(1.15) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0);       opacity: 1; }
+}
+
+@keyframes halo {
+  0%   { box-shadow: 0 0 0 0   currentColor; opacity: 0.5; }
+  100% { box-shadow: 0 0 0 18px currentColor; opacity: 0; }
+}
+
+/* Typewriter caret blink for the query input placeholder */
+@keyframes caret-blink {
+  0%, 50%  { opacity: 1; }
+  51%, 100%{ opacity: 0; }
+}
+
+/* Scrollbar tuned for light theme */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--npr-surface); }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 15, 0.2); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 15, 0.35); }

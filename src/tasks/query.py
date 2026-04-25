@@ -22,7 +22,11 @@ def create_query_task(knowledge_retriever) -> Task:
             "information not found in the knowledge base.\n"
             "IMPORTANT: If the tool returns zero results or grade F, return exactly "
             "that. Do NOT attempt additional searches. The absence of a result IS "
-            "the answer — the knowledge base does not contain this information."
+            "the answer — the knowledge base does not contain this information.\n"
+            "ERROR RECOVERY: If the tool call fails with an exception or returns an "
+            "error message, return a structured error response with confidence_grade='F', "
+            "an empty results list, and error details in the reasoning field. Never "
+            "retry more than once — escalate the failure rather than looping."
         ),
         expected_output=(
             "The raw retrieval results including:\n"
@@ -59,7 +63,11 @@ def create_synthesize_task(insight_synthesizer, query_task) -> Task:
             "IMPORTANT: Format your final response as JSON with these exact keys:\n"
             '  "answer", "confidence_grade", "source_photos", "query_type", '
             '"reasoning", "warning"\n'
-            "The confidence_grade MUST be exactly one of: A, B, C, D, F"
+            "The confidence_grade MUST be exactly one of: A, B, C, D, F\n"
+            "ERROR RECOVERY: If the retriever's output is missing, malformed, or "
+            "reports an error, set confidence_grade='F', answer='Unable to retrieve "
+            "information due to a system error.', and include the upstream error in "
+            "the warning field. Do not hallucinate an answer from missing evidence."
         ),
         expected_output=(
             "A JSON response with:\n"

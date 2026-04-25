@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhotoMind - RL-Powered Photo Knowledge Retrieval</title>
+  <style>
+    :root {
+      /* NPR Brand Palette — light theme */
+      --bg: #FFFFFF;
+      --surface: #F7F7F8;
+      --surface2: #EFEFF2;
+      --border: rgba(0, 0, 15, 0.12);
+      --text: #00000F;
+      --text-dim: rgba(0, 0, 15, 0.6);
+      --accent: #F15B1C;         /* Heliconia */
+      --accent-light: #F7845A;
+      --green: #2E7D32;
+      --red: #D32F2F;
+      --orange: #F15B1C;
+      --blue: #4C85C5;           /* Jay Blue */
+      color-scheme: light;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #FFFFFF 0%, #F7F7F8 50%, #FFFFFF 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 4rem 2rem 3rem;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+    .header .subtitle {
+      font-size: 1.15rem;
+      color: var(--text-dim);
+      max-width: 700px;
+      margin: 0 auto 1.5rem;
+    }
+    .badge-row {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .badge.purple { border-color: #7c6ff066; color: var(--accent-light); }
+    .badge.green { border-color: #34d39966; color: var(--green); }
+    .badge.blue { border-color: #60a5fa66; color: var(--blue); }
+    .badge.orange { border-color: #fb923c66; color: var(--orange); }
+
+    /* Nav */
+    .nav {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .nav a {
+      padding: 0.5rem 1.25rem;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-weight: 500;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .nav a:hover {
+      background: var(--accent);
+      color: white;
+      text-decoration: none;
+      border-color: var(--accent);
+    }
+
+    /* Container */
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+
+    /* Section */
+    .section { margin-bottom: 3rem; }
+    .section h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--border);
+    }
+    .section h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.75rem;
+      color: var(--accent-light);
+    }
+
+    /* Cards */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card .card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .card p { color: var(--text-dim); font-size: 0.95rem; }
+    .card .card-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Metric cards */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--green);
+    }
+    .metric-value.warn { color: var(--orange); }
+    .metric-value.danger { color: var(--red); }
+    .metric-label {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin-top: 0.25rem;
+    }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; margin: 1rem 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.6rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: var(--surface);
+      font-weight: 600;
+      color: var(--accent-light);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    tr:hover td { background: var(--surface2); }
+    td code {
+      background: var(--surface2);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    /* Figure */
+    .fig-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+      gap: 1.5rem;
+      margin: 1.5rem 0;
+    }
+    .fig-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .fig-item img {
+      width: 100%;
+      display: block;
+    }
+    .fig-caption {
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+
+    /* Pipeline diagram */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin: 1.5rem 0;
+      justify-content: center;
+    }
+    .pipeline-step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      text-align: center;
+      min-width: 140px;
+    }
+    .pipeline-step .step-label {
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .pipeline-step .step-sub {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      margin-top: 0.25rem;
+    }
+    .pipeline-arrow {
+      font-size: 1.5rem;
+      color: var(--accent);
+      padding: 0 0.5rem;
+    }
+
+    /* Code block */
+    .code-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.85rem;
+      line-height: 1.7;
+      margin: 1rem 0;
+    }
+    .code-block .comment { color: #6a9955; }
+    .code-block .cmd { color: var(--accent-light); }
+
+    /* Architecture diagram text */
+    .arch-text {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.82rem;
+      line-height: 1.8;
+      white-space: pre;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .header h1 { font-size: 2rem; }
+      .fig-grid { grid-template-columns: 1fr; }
+      .pipeline { flex-direction: column; }
+      .pipeline-arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ────────────────────────────────────────────────────────── -->
+<div class="header">
+  <h1>PhotoMind</h1>
+  <p class="subtitle">
+    An RL-powered multimodal personal photo knowledge retrieval system that turns your photo library into a queryable knowledge base with confidence-graded answers.
+  </p>
+  <div class="badge-row">
+    <span class="badge purple">CrewAI</span>
+    <span class="badge green">GPT-4o Vision</span>
+    <span class="badge blue">PyTorch</span>
+    <span class="badge orange">Thompson Sampling</span>
+    <span class="badge purple">DQN</span>
+    <span class="badge green">React + FastAPI</span>
+  </div>
+  <div class="nav">
+    <a href="#overview">Overview</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#rl">RL Extension</a>
+    <a href="#results">Results</a>
+    <a href="#demo">Demo</a>
+    <a href="#setup">Setup</a>
+    <a href="https://github.com/raghuneu/PhotoMind" target="_blank">GitHub</a>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ── Overview ───────────────────────────────────────────────────────── -->
+<div class="section" id="overview">
+  <h2>Overview</h2>
+  <p>
+    Smartphone users accumulate thousands of photos&mdash;receipts, bills, food, screenshots, documents&mdash;but cannot search them by meaning or extract facts using natural language. <strong>PhotoMind</strong> addresses this gap by analyzing photos with GPT-4o Vision, building a structured knowledge base, and answering queries with confidence-graded answers and source attribution.
+  </p>
+
+  <h3>What Can You Ask?</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">&#128477;</div>
+      <div class="card-title">Factual Queries</div>
+      <p>"How much did I spend at ALDI?" &rarr; Finds all 5 ALDI receipts, aggregates total with source photos</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#127829;</div>
+      <div class="card-title">Semantic Queries</div>
+      <p>"Show me photos of pizza" &rarr; Finds food photos matching the visual description</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128200;</div>
+      <div class="card-title">Behavioral Queries</div>
+      <p>"What type of food do I photograph most?" &rarr; Analyzes patterns across all 25 photos</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#10060;</div>
+      <div class="card-title">Graceful Decline</div>
+      <p>"What was my electric bill?" &rarr; Correctly declines (no such photo exists in the library)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Architecture ──────────────────────────────────────────────────── -->
+<div class="section" id="architecture">
+  <h2>System Architecture</h2>
+
+  <h3>Four Specialized Agents</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Controller Agent</div>
+      <p>Hierarchical manager that classifies query intent (factual/semantic/behavioral) and delegates to specialists. Chief librarian of the knowledge base.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Photo Analyst</div>
+      <p>Scans photos and extracts structured knowledge via GPT-4o Vision: OCR text, entities, descriptions, confidence scores.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Knowledge Retriever</div>
+      <p>Searches the knowledge base using the RL-enhanced PhotoKnowledgeBaseTool with 4 search strategies and confidence grading.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Insight Synthesizer</div>
+      <p>Produces grounded answers with citation rules: every claim cites a source photo, every answer includes a confidence grade A&ndash;F.</p>
+    </div>
+  </div>
+
+  <h3>Query Pipeline</h3>
+  <div class="pipeline">
+    <div class="pipeline-step">
+      <div class="step-label">User Query</div>
+      <div class="step-sub">Natural language</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">Controller</div>
+      <div class="step-sub">Intent classification</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">Bandit Router</div>
+      <div class="step-sub">Strategy selection</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">Retriever</div>
+      <div class="step-sub">4 search strategies</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">DQN Calibrator</div>
+      <div class="step-sub">Confidence grading</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">Synthesizer</div>
+      <div class="step-sub">Graded answer</div>
+    </div>
+  </div>
+
+  <h3>Four Search Strategies</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Factual Search</div>
+      <p>Entity + OCR keyword matching for receipts, bills, documents. Supports aggregation queries with computed totals.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Semantic Search</div>
+      <p>Keyword overlap scoring on photo descriptions for visual meaning and mood queries.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Behavioral Search</div>
+      <p>Corpus-wide pattern aggregation: image type distribution, entity frequencies, representative photos.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Embedding Search</div>
+      <p>Dense vector retrieval via all-MiniLM-L6-v2 (384-dim, cosine similarity). Zero API cost, true semantic matching.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── RL Extension ──────────────────────────────────────────────────── -->
+<div class="section" id="rl">
+  <h2>Reinforcement Learning Extension</h2>
+  <p>
+    PhotoMind integrates two RL components to address the base system's weaknesses: ambiguous query routing and silent failures (confident-but-wrong answers).
+  </p>
+
+  <h3>Approach 1: Contextual Bandits (Query Routing)</h3>
+  <p>
+    A 4-arm contextual bandit routes queries to the optimal search strategy. Three exploration algorithms are evaluated:
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Thompson Sampling</div>
+      <p>Beta posteriors per (cluster, arm) pair. Bayesian exploration with posterior concentration. Best overall performance.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">UCB1</div>
+      <p>Upper confidence bound with exploration constant C=2.0. High exploration variance makes it unsuitable when paired with DQN.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Epsilon-Greedy</div>
+      <p>Standard exploration with decay. Falls between Thompson and UCB in routing accuracy.</p>
+    </div>
+  </div>
+
+  <h3>Approach 2: DQN Confidence Calibrator</h3>
+  <p>
+    A Deep Q-Network over an 8-dimensional state space with 5 actions: <code>accept_high</code>, <code>accept_moderate</code>, <code>hedge</code>, <code>requery</code>, <code>decline</code>. The <strong>requery</strong> action is non-terminal&mdash;the agent can gather additional evidence from an alternate search strategy before committing to a confidence decision.
+  </p>
+
+  <div class="arch-text">State: [top_score, score_gap, num_results, strategy_idx, query_len, entity_match, type_match, avg_score]
+
+Q-Network: FC(8 &rarr; 64) &rarr; ReLU &rarr; FC(64 &rarr; 64) &rarr; ReLU &rarr; FC(64 &rarr; 5)
+
+Bellman (requery): Q*(s, requery) = R(s, requery) + &gamma; &middot; max_a' Q*(s', a')
+
+Reward Design:  Silent failure (accept_high on wrong) = -1.0
+                Correct decline = +1.0  |  Correct accept = +1.0
+                Requery step cost = -0.1 (prevents degenerate looping)</div>
+
+  <h3>Offline Training: $0 API Cost</h3>
+  <p>
+    The <code>PhotoMindSimulator</code> pre-computes all search results for all strategies and queries, then serves them during training. Training 7 configurations &times; 5 seeds &times; 2,000 episodes completes in under 60 seconds on CPU. Live API training would cost ~$11,200.
+  </p>
+</div>
+
+<!-- ── Results ────────────────────────────────────────────────────────── -->
+<div class="section" id="results">
+  <h2>Results &amp; Analysis</h2>
+
+  <h3>Key Metrics (56 queries, 5 seeds, 95% CIs)</h3>
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-value">87.5%</div>
+      <div class="metric-label">Retrieval Accuracy</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">76.8%</div>
+      <div class="metric-label">Routing Accuracy</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">0.4%</div>
+      <div class="metric-label">Silent Failure Rate</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">90.9%</div>
+      <div class="metric-label">Decline Accuracy</div>
+    </div>
+  </div>
+  <p style="text-align:center;color:var(--text-dim);font-size:0.85rem;">Recommended (Rule+DQN) configuration</p>
+
+  <h3>Ablation Study (7 Configs)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Configuration</th>
+          <th>Retrieval</th>
+          <th>Routing</th>
+          <th>Silent Fail</th>
+          <th>Decline</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Recommended (Rule+DQN)</strong></td>
+          <td>88.1% &pm; 0.0%</td>
+          <td>78.6% &pm; 0.0%</td>
+          <td><strong>0.5% &pm; 1.3%</strong></td>
+          <td>100.0% &pm; 0.0%</td>
+        </tr>
+        <tr>
+          <td>Full RL (Thompson+DQN)</td>
+          <td>90.5% &pm; 0.0%</td>
+          <td>71.4% &pm; 0.0%</td>
+          <td><strong>0.0% &pm; 0.0%</strong></td>
+          <td>97.1% &pm; 7.9%</td>
+        </tr>
+        <tr>
+          <td>Bandit Only (Thompson)</td>
+          <td>90.5% &pm; 0.0%</td>
+          <td>71.0% &pm; 1.3%</td>
+          <td>0.0% &pm; 0.0%</td>
+          <td>85.7% &pm; 0.0%</td>
+        </tr>
+        <tr>
+          <td>UCB + DQN</td>
+          <td>73.3% &pm; 3.9%</td>
+          <td>10.5% &pm; 1.6%</td>
+          <td>3.8% &pm; 2.6%</td>
+          <td>97.1% &pm; 7.9%</td>
+        </tr>
+        <tr>
+          <td>Baseline (Rule-Based)</td>
+          <td>88.1% &pm; 0.0%</td>
+          <td>78.6% &pm; 0.0%</td>
+          <td>2.4% &pm; 0.0%</td>
+          <td>100.0% &pm; 0.0%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Key Findings</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">DQN Eliminates Silent Failures</div>
+      <p>Silent failure rate reduced from 2.4% (baseline) to 0.0% (Full RL) and 0.4% (Recommended). The DQN is the primary safety contributor.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Component Interaction Effects</div>
+      <p>Thompson Sampling complements DQN (0.0% silent failures). UCB compounds with DQN errors (3.8% &mdash; worse than baseline). Rule+DQN decouples the interaction risk.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Held-Out Generalization</div>
+      <p>14-query held-out set: 0.0% silent failures across all seeds, confirming learned policies generalize without degradation.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">$0 Training Cost</div>
+      <p>All RL training runs offline via PhotoMindSimulator. Zero API calls during training or evaluation. Full pipeline reproducible from clean checkout.</p>
+    </div>
+  </div>
+
+  <h3>Training Visualizations</h3>
+  <div class="fig-grid">
+    <div class="fig-item">
+      <img src="figures/dqn_rewards.png" alt="DQN Training Rewards" loading="lazy">
+      <div class="fig-caption">DQN reward convergence across 5 seeds. Stabilizes at ~0.76 within 500 episodes.</div>
+    </div>
+    <div class="fig-item">
+      <img src="figures/ablation_comparison.png" alt="Ablation Comparison" loading="lazy">
+      <div class="fig-caption">Ablation study: 7 configs across 4 metrics with 95% confidence intervals.</div>
+    </div>
+    <div class="fig-item">
+      <img src="figures/bandit_regret.png" alt="Bandit Regret" loading="lazy">
+      <div class="fig-caption">Cumulative regret for Thompson Sampling. Sub-linear growth confirms learning.</div>
+    </div>
+    <div class="fig-item">
+      <img src="figures/before_after_learning.png" alt="Before/After" loading="lazy">
+      <div class="fig-caption">Before/after: baseline vs. Recommended (Rule+DQN) after 2,000 episodes.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Demo ───────────────────────────────────────────────────────────── -->
+<div class="section" id="demo">
+  <h2>Interactive Demo</h2>
+  <p>
+    PhotoMind includes a React frontend with FastAPI backend featuring two query modes:
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Fast Mode ($0, &lt;1s)</div>
+      <p>Direct Python execution with RL-enhanced retrieval. No API calls. Instant responses using bandit routing + DQN confidence grading.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Full Mode (~$0.003/query, ~30s)</div>
+      <p>Full CrewAI multi-agent pipeline with GPT-4o. Four agents collaborate to produce synthesized, cited answers.</p>
+    </div>
+  </div>
+
+  <h3>Video Demonstration</h3>
+  <p>
+    Watch the 10-minute demo showing the system in action:
+    <a href="https://www.youtube.com/watch?v=UQRdkW2mAgc" target="_blank">YouTube Demo Video</a>
+  </p>
+
+  <h3>Run Locally</h3>
+  <div class="code-block">
+<span class="comment"># Start the FastAPI backend</span>
+<span class="cmd">cd PhotoMind</span>
+<span class="cmd">source .venv/bin/activate</span>
+<span class="cmd">uvicorn api.server:app --reload --port 8000</span>
+
+<span class="comment"># In a separate terminal, start the React frontend</span>
+<span class="cmd">cd PhotoMind/web</span>
+<span class="cmd">npm run dev</span>
+
+<span class="comment"># Open http://localhost:5173</span>
+  </div>
+</div>
+
+<!-- ── Setup ──────────────────────────────────────────────────────────── -->
+<div class="section" id="setup">
+  <h2>Setup &amp; Reproduction</h2>
+
+  <div class="code-block">
+<span class="comment"># 1. Clone and setup</span>
+<span class="cmd">git clone https://github.com/raghuneu/PhotoMind.git</span>
+<span class="cmd">cd PhotoMind</span>
+<span class="cmd">~/.pyenv/versions/3.10.14/bin/python3 -m venv .venv</span>
+<span class="cmd">source .venv/bin/activate</span>
+<span class="cmd">pip install -r requirements.txt</span>
+
+<span class="comment"># 2. Run RL training (7 configs x 5 seeds, ~60 seconds)</span>
+<span class="cmd">python -m src.rl.training_pipeline</span>
+
+<span class="comment"># 3. Run evaluation suite (56 queries)</span>
+<span class="cmd">python -m eval.run_rl_evaluation</span>
+
+<span class="comment"># 4. Generate visualization figures</span>
+<span class="cmd">python -m viz.generate_figures</span>
+
+<span class="comment"># 5. Run unit tests (45 tests)</span>
+<span class="cmd">pytest tests/ -v</span>
+  </div>
+
+  <h3>Project Structure</h3>
+  <div class="arch-text">PhotoMind/
+  src/
+    agents/          # 4 CrewAI agents
+    tools/           # PhotoVisionTool, PhotoKnowledgeBaseTool, EmbeddingIndex
+    rl/              # Contextual bandits, DQN, simulation environment
+    crews/           # Ingestion + query crew definitions
+  api/               # FastAPI backend (server.py)
+  web/               # React + TypeScript + Tailwind frontend
+  eval/              # Evaluation harness, test cases, statistical analysis
+  viz/               # Figure generation scripts
+  knowledge_base/    # photo_index.json, RL models, embeddings
+  tests/             # 45 unit tests across 7 test classes
+  docs/              # Technical report (LaTeX), architecture diagrams</div>
+
+  <h3>Requirements</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Python 3.10+</div>
+      <p>CrewAI, PyTorch (CPU), sentence-transformers, scikit-learn, FastAPI, uvicorn</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Node.js 18+</div>
+      <p>React 18, Vite, TypeScript, Tailwind CSS v4, Recharts, Lucide React</p>
+    </div>
+    <div class="card">
+      <div class="card-title">API Keys (Optional)</div>
+      <p>OpenAI API key required only for photo ingestion and Full query mode. All RL training is $0.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Documentation ─────────────────────────────────────────────────── -->
+<div class="section" id="docs">
+  <h2>Documentation</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Technical Report (PDF)</div>
+      <p>31-page LaTeX document covering system architecture, mathematical formulations, ablation study, statistical analysis, and ethical considerations.</p>
+      <p style="margin-top:0.5rem"><a href="report/main.pdf">Download PDF</a></p>
+    </div>
+    <div class="card">
+      <div class="card-title">GitHub Repository</div>
+      <p>Complete source code, documentation, setup instructions, test scripts, knowledge base, and trained RL models.</p>
+      <p style="margin-top:0.5rem"><a href="https://github.com/raghuneu/PhotoMind" target="_blank">View on GitHub</a></p>
+    </div>
+    <div class="card">
+      <div class="card-title">Mathematical Formulations</div>
+      <p>LaTeX-ready formulations for Thompson Sampling, UCB1, DQN Bellman equations, reward functions, and statistical tests.</p>
+      <p style="margin-top:0.5rem"><a href="math_formulations.md">View formulations</a></p>
+    </div>
+  </div>
+</div>
+
+</div><!-- container -->
+
+<!-- ── Footer ─────────────────────────────────────────────────────────── -->
+<div class="footer">
+  <p>
+    <strong>PhotoMind</strong> &mdash; Raghunandan Gunji &mdash; Northeastern University<br>
+    Course: Prompt Engineering &mdash; Building Agentic Systems<br>
+    CrewAI &middot; GPT-4o Vision &middot; PyTorch &middot; React &middot; FastAPI &middot; Python 3.10.14
+  </p>
+</div>
+
+</body>
+</html>

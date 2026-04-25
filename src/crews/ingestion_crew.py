@@ -1,4 +1,19 @@
-"""Ingestion crew — processes photos into the knowledge base."""
+"""Ingestion crew — processes photos into the knowledge base.
+
+Communication pattern: **Sequential pipeline** (Process.sequential).
+Each task's output becomes the next task's input via CrewAI's ``context``
+parameter:  scan_task → analyze_task → index_task.
+
+Data flow:
+  1. Photo Analyst / scan_task  → list of image file paths
+  2. Photo Analyst / analyze_task (context=scan) → structured JSON per photo
+     (image_type, ocr_text, description, entities, confidence)
+  3. Knowledge Retriever / index_task (context=analyze) → persisted
+     photo_index.json knowledge base
+
+Memory: sentence-transformer embeddings (all-MiniLM-L6-v2) enable
+cross-step context retention beyond explicit ``context`` wiring.
+"""
 
 from crewai import Crew, Process
 from src.agents.definitions import create_photo_analyst, create_knowledge_retriever

@@ -1,0 +1,10 @@
+graph TD
+    UQ["User Query"] --> QFE["QueryFeatureExtractor<br/>→ 12-dim feature vector"]
+    QFE --> CB["Contextual Bandit<br/>(Thompson Sampling / UCB1 / ε-Greedy)"]
+    CB -->|"arm: factual / semantic / behavioral"| PKB["PhotoKnowledgeBaseTool<br/>3 search strategies"]
+    PKB --> CS["ConfidenceState → 8-dim state vector"]
+    CS --> DQN["ConfidenceDQN<br/>FC(8→64→64→5)"]
+    DQN -->|"accept_high / accept_moderate / hedge / decline"| Terminal["Terminal (done=True)"]
+    DQN -->|"requery"| Requery["Non-terminal: pick alternate arm,<br/>re-observe results (max 2 steps)"]
+    Requery -->|"alternate strategy"| PKB
+    Terminal --> IS["Insight Synthesizer<br/>→ graded answer with source attribution"]

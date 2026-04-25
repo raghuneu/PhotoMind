@@ -1,0 +1,14 @@
+graph LR
+    subgraph Offline["Offline Simulation"]
+        KB2[("photo_index.json")] --> Sim["PhotoMindSimulator<br/>pre-compute 3 strategies × 56 queries"]
+        Aug["Query Augmentation<br/>10× synonym + entity swap"] --> Sim
+    end
+    subgraph Training
+        Sim --> Bandit["Train Contextual Bandit<br/>2000 episodes × 5 seeds"]
+        Sim --> DQN2["Train DQN Confidence<br/>2000 episodes × 5 seeds<br/>(multi-step with requery)"]
+    end
+    subgraph Evaluation
+        Bandit --> Ablation["7-config Ablation<br/>42 train / 14 held-out"]
+        DQN2 --> Ablation
+        Ablation --> Stats["Statistical Analysis<br/>95% CI, paired t-test, Cohen's d"]
+    end

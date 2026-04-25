@@ -124,6 +124,7 @@ TEST_CASES = [
         "expected_type": "behavioral",
         "expected_photo": "IMG_1762.HEIC",  # Representative food photo
         "expected_answer_contains": None,
+        "expected_top_entity": "food",  # Outcome check: any food photo in results
         "category": "behavioral",
     },
     {
@@ -131,6 +132,7 @@ TEST_CASES = [
         "expected_type": "behavioral",
         "expected_photo": "IMG_1853.HEIC",  # Representative receipt photo
         "expected_answer_contains": None,
+        "expected_top_entity": "receipt",
         "category": "behavioral",
     },
     {
@@ -138,6 +140,7 @@ TEST_CASES = [
         "expected_type": "behavioral",
         "expected_photo": None,  # Aggregate query — any photo is valid
         "expected_answer_contains": None,
+        "expected_top_entity": "receipt",  # Receipts are the dominant category
         "category": "behavioral",
     },
     {
@@ -145,6 +148,7 @@ TEST_CASES = [
         "expected_type": "behavioral",
         "expected_photo": "IMG_1853.HEIC",  # ALDI receipt (most frequent store)
         "expected_answer_contains": None,
+        "expected_top_entity": "aldi",
         "category": "behavioral",
     },
 

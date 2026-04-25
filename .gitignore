@@ -213,3 +213,14 @@ eval/results/
 
 dashboard/frontend/node_modules/
 photos/
+
+# CLI tool local state
+.claude/
+.cortex/
+.playwright-mcp/
+
+# Frontend build artifacts
+web/node_modules/
+web/dist/
+
+knowledge_base/embeddings.npz
