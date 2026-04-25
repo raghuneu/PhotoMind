@@ -18,8 +18,10 @@ COPY knowledge_base/ knowledge_base/
 COPY viz/ viz/
 COPY .env.example .env.example
 
-RUN mkdir -p /app/photos /app/knowledge_base /app/eval/results \
-    && chown -R 1000:1000 /app
+RUN mkdir -p /app/photos /app/knowledge_base /app/eval/results /home/user \
+    && chown -R 1000:1000 /app /home/user
+
+ENV HOME=/home/user
 
 EXPOSE 7860
 USER 1000
