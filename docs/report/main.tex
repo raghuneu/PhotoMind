@@ -13,12 +13,14 @@
 \usepackage{subcaption}
 \usepackage{float}
 \usepackage{enumitem}
-% multirow omitted (not installed)
+% multirow omitted (not installed in this TeX distribution)
 \usepackage{tabularx}
 \usepackage{fancyhdr}
 \usepackage{titlesec}
 \usepackage[T1]{fontenc}
-% microtype omitted (font expansion issue with this TeX installation)
+\usepackage{lmodern}              % Latin Modern for mono/sans + math fallback
+\renewcommand{\rmdefault}{ptm}    % Times New Roman for body text
+\usepackage{microtype}
 \usepackage{parskip}
 
 % ── Configuration ─────────────────────────────────────────────────────────
@@ -146,7 +148,7 @@ PhotoMind consists of two CrewAI crews: a \textbf{sequential ingestion crew} tha
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{ingestion_data_flow.png}
+  \includegraphics[width=0.85\textwidth,height=0.75\textheight,keepaspectratio]{ingestion_data_flow.png}
   \caption{Ingestion data flow: scan $\to$ analyze $\to$ index.}
   \label{fig:ingestion-flow}
 \end{figure}
@@ -155,7 +157,7 @@ PhotoMind consists of two CrewAI crews: a \textbf{sequential ingestion crew} tha
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{query_data_flow.png}
+  \includegraphics[width=0.85\textwidth,height=0.75\textheight,keepaspectratio]{query_data_flow.png}
   \caption{Query data flow with RL-enhanced retrieval.}
   \label{fig:query-flow}
 \end{figure}
@@ -166,7 +168,7 @@ The RL extension adds two learned components to the query pipeline: a contextual
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\textwidth]{system_Architecture_with_RL.png}
+  \includegraphics[width=0.95\textwidth,height=0.8\textheight,keepaspectratio]{system_Architecture_with_RL.png}
   \caption{System architecture with RL components: contextual bandit (routing) + DQN (confidence).}
   \label{fig:rl-arch}
 \end{figure}
