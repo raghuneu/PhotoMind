@@ -1,8 +1,41 @@
-"""Extract feature vectors from natural language queries for RL components."""
+"""Extract feature vectors from natural language queries for RL components.
+
+Returns a 396-dim hybrid vector: 12 handcrafted lexical/structural features
+(indices 0-11) concatenated with a 384-dim MiniLM sentence embedding
+(indices 12-395).
+
+The MiniLM encoder (sentence-transformers/all-MiniLM-L6-v2) is the same
+model used for photo embeddings in the Qdrant index, so query features live
+in the same semantic space as indexed photos. This lets KMeans cluster the
+query space by actual meaning, not only by keyword patterns — a real
+improvement over the prior 12-dim keyword-only features that collapsed
+paraphrases into different clusters.
+
+The handcrafted 12 are kept at the FRONT of the vector so that
+ConfidenceState.from_retrieval (which reads query_features[0] as
+"query length normalized" for DQN state dim 4) remains semantically valid
+without any caller changes.
+"""
 
 import json
 import re
 import numpy as np
+
+# MiniLM encoder is loaded lazily and cached at module scope so the 90 MB
+# model doesn't reload on every QueryFeatureExtractor instantiation (used
+# per-query inside the retrieval tool).
+_ENCODER = None
+_EMBED_DIM = 384
+HANDCRAFTED_DIM = 12
+FEATURE_DIM = HANDCRAFTED_DIM + _EMBED_DIM  # 396
+
+
+def _get_encoder():
+    global _ENCODER
+    if _ENCODER is None:
+        from sentence_transformers import SentenceTransformer
+        _ENCODER = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return _ENCODER
 
 
 def _clean(text: str) -> str:
@@ -11,7 +44,12 @@ def _clean(text: str) -> str:
 
 
 class QueryFeatureExtractor:
-    """Converts a natural language query into a fixed-size feature vector."""
+    """Converts a natural language query into a 396-dim feature vector.
+
+    Layout:
+        [0:12]   handcrafted lexical/structural features (length, keyword flags)
+        [12:396] MiniLM-L6-v2 sentence embedding (normalized by model)
+    """
 
     def __init__(self, kb_path: str = "./knowledge_base/photo_index.json"):
         self.known_vendors = set()
@@ -30,12 +68,12 @@ class QueryFeatureExtractor:
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
-    def extract(self, query: str) -> np.ndarray:
-        """Return a 12-dimensional feature vector for the given query."""
+    def _handcrafted(self, query: str) -> np.ndarray:
+        """Return the 12-dim handcrafted feature slice."""
         q = _clean(query)
         words = q.split()
 
-        features = np.zeros(12, dtype=np.float32)
+        features = np.zeros(HANDCRAFTED_DIM, dtype=np.float32)
 
         # 0: query length normalized
         features[0] = min(len(query) / 100.0, 1.0)
@@ -71,3 +109,17 @@ class QueryFeatureExtractor:
         features[11] = 1.0 if any(v in q for v in self.known_vendors if len(v) > 2) else 0.0
 
         return features
+
+    def extract(self, query: str) -> np.ndarray:
+        """Return a 396-dim hybrid feature vector (12 handcrafted + 384 MiniLM)."""
+        handcrafted = self._handcrafted(query)
+        try:
+            embedding = _get_encoder().encode(
+                query, normalize_embeddings=True, show_progress_bar=False
+            ).astype(np.float32)
+        except Exception:
+            # If encoder fails to load (offline / no torch), fall back to zeros
+            # so the bandit still runs on the handcrafted prefix.
+            embedding = np.zeros(_EMBED_DIM, dtype=np.float32)
+        return np.concatenate([handcrafted, embedding])
+

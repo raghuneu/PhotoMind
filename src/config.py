@@ -1,5 +1,7 @@
 """Configuration management with startup validation."""
 
+import os
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -15,7 +17,6 @@ class PhotoMindSettings(BaseSettings):
         default="./knowledge_base/photo_index.json",
         description="Path to the JSON knowledge base"
     )
-    daily_budget_usd: float = Field(default=5.00, description="Daily API spend cap")
     qdrant_url: str = Field(default="http://localhost:6333", description="Qdrant server URL")
     qdrant_collection: str = Field(default="photos", description="Qdrant collection name")
     repository_backend: str = Field(
@@ -44,3 +45,13 @@ def get_settings() -> PhotoMindSettings:
 
 
 settings = get_settings()
+
+# Propagate key credentials to os.environ so that third-party libraries
+# (crewai_tools.JSONSearchTool → embedchain → openai, litellm, etc.) that
+# read directly from the environment can find them. Pydantic Settings loads
+# .env into the settings object but does NOT populate os.environ. Using
+# setdefault preserves any value already exported in the shell (12-factor).
+if settings.openai_api_key:
+    os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
+if settings.serper_api_key:
+    os.environ.setdefault("SERPER_API_KEY", settings.serper_api_key)

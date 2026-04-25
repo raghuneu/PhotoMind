@@ -138,8 +138,15 @@ class PhotoKnowledgeBaseTool(BaseTool):
             if query_type == "auto":
                 rl_type = self._rl_classify_query(query)
                 if rl_type is not None:
-                    query_type = rl_type
-                    routing_source = "rl_bandit"
+                    # Guard: reject bandit's "behavioral" pick when the query
+                    # lacks any behavioral-intent signal — short noun queries
+                    # like "pizza" get misrouted and produce generic results.
+                    if rl_type == "behavioral" and not self._has_behavioral_intent(query):
+                        query_type = self._classify_query(query)
+                        routing_source = "rule_based"
+                    else:
+                        query_type = rl_type
+                        routing_source = "rl_bandit"
                 else:
                     query_type = self._classify_query(query)
                     routing_source = "rule_based"
@@ -338,6 +345,17 @@ class PhotoKnowledgeBaseTool(BaseTool):
         else:
             return "semantic"
 
+    def _has_behavioral_intent(self, query: str) -> bool:
+        """Check if query contains behavioral-intent keywords."""
+        q = _clean(query)
+        behavioral_signals = [
+            "most", "often", "frequently", "pattern", "trend", "favorite",
+            "usually", "habit", "how many times", "how many", "what kind of",
+            "what type of", "distribution", "breakdown", "more", "less",
+            "compare", "versus", "vs", "prefer", "average",
+        ]
+        return any(kw in q for kw in behavioral_signals)
+
     # ── Search Strategies ────────────────────────────────────────────────
 
     def _factual_search(self, query: str, kb: dict, top_k: int) -> list:
@@ -345,16 +363,22 @@ class PhotoKnowledgeBaseTool(BaseTool):
         results = []
         q = _clean(query)
         words = q.split()
+        # Meaningful tokens: long enough to be distinctive and not a stop word.
+        # Using the same filter for entity-value AND OCR branches keeps scoring
+        # consistent and prevents fillers ("how", "did") from matching abstract
+        # entities like topic="How to build AI agents" on a spending query.
+        meaningful_words = [w for w in words if len(w) > 3 and w not in _STOP_WORDS]
 
         for photo in kb["photos"]:
             score = 0.0
             evidence_parts = []
 
-            # Match against structured entities
+            # Match against structured entities (token-boundary, meaningful words only)
             for entity in photo.get("entities", []):
                 val = _clean(entity.get("value", ""))
                 etype = entity.get("type", "").lower()
-                if any(word in val for word in words if len(word) > 2):
+                val_tokens = set(val.split())
+                if any(w in val_tokens for w in meaningful_words):
                     score += 0.4
                     evidence_parts.append(f"{etype}: {entity['value']}")
                 # Boost if entity type matches query context
@@ -362,13 +386,10 @@ class PhotoKnowledgeBaseTool(BaseTool):
                     score += 0.1
                     evidence_parts.append(f"{etype}: {entity['value']}")
 
-            # Match against OCR text (exclude stop words)
+            # Match against OCR text (uses the same meaningful-word filter)
             ocr_text = _clean(photo.get("ocr_text", ""))
             if ocr_text:
-                matching = sum(
-                    1 for w in words
-                    if w in ocr_text and len(w) > 3 and w not in _STOP_WORDS
-                )
+                matching = sum(1 for w in meaningful_words if w in ocr_text)
                 word_score = min(matching * 0.15, 0.5)
                 score += word_score
                 if word_score > 0:
@@ -516,8 +537,9 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 target_entity_type = etype
                 break
 
-        # Build summary
+        # Build summary (entity bullets) and capture top-entity set for evidence grounding
         summary_parts = [f"Photo type distribution: {dict(sorted_types[:5])}"]
+        top_entities: list[str] = []  # Preserves rank order; index 0 = #1 frequent
         if target_entity_type and target_entity_type in entity_type_counts:
             sorted_entities = sorted(
                 entity_type_counts[target_entity_type].items(),
@@ -526,6 +548,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
             summary_parts.append(
                 f"Most frequent {target_entity_type}s: {dict(sorted_entities[:5])}"
             )
+            top_entities = [v for v, _ in sorted_entities[:5]]
         else:
             all_entities = {}
             for etype_counts in entity_type_counts.values():
@@ -534,41 +557,111 @@ class PhotoKnowledgeBaseTool(BaseTool):
             sorted_all = sorted(all_entities.items(), key=lambda x: x[1], reverse=True)
             if sorted_all:
                 summary_parts.append(f"Most frequent entities: {dict(sorted_all[:5])}")
+                top_entities = [v for v, _ in sorted_all[:5]]
 
-        # Select relevant photos and compute query-aware scores
+        # ── Evidence-grounded photo selection ──
+        # Primary pool: photos that contain at least one of the top aggregated entities
+        # (these photos substantiate the answer bullets). Pool is independent of
+        # image_type so that OCR-derived entities correctly attribute to receipts.
+        top_entity_set = {v.lower() for v in top_entities if v}
+
+        def _match_top_entity(photo: dict) -> tuple[int, str | None]:
+            """Return (match_count, best_matched_entity_by_rank) for a photo.
+
+            A photo's stored entity only counts as evidence when its value is
+            also substring-grounded in the photo's OCR or description. This
+            prevents silent mismatches where the KB lists an entity that does
+            not textually appear in what the user can read/see on the photo.
+            """
+            source_blob = (
+                (photo.get("ocr_text") or "") + " "
+                + (photo.get("description") or "") + " "
+                + (photo.get("caption") or "")
+            ).lower()
+            grounded_vals: set[str] = set()
+            for e in photo.get("entities", []):
+                val = (e.get("value") or "").strip()
+                if not val:
+                    continue
+                val_clean = _clean(val)
+                if not val_clean:
+                    continue
+                # Whole-phrase match, else token-majority match (>= half of tokens >2 chars)
+                if val_clean in source_blob:
+                    grounded_vals.add(val_clean)
+                    continue
+                toks = [t for t in val_clean.split() if len(t) > 2]
+                if toks:
+                    hits = sum(1 for t in toks if t in source_blob)
+                    if hits >= max(1, len(toks) // 2 + len(toks) % 2):
+                        grounded_vals.add(val_clean)
+            count = sum(1 for v in grounded_vals if v in top_entity_set)
+            best = None
+            for ranked in top_entities:  # Iterate in rank order
+                if _clean(ranked) in grounded_vals:
+                    best = ranked
+                    break
+            return count, best
+
+        primary_pool: list[tuple[dict, int, str | None]] = []
+        if top_entity_set:
+            for p in kb["photos"]:
+                cnt, best = _match_top_entity(p)
+                if cnt > 0:
+                    primary_pool.append((p, cnt, best))
+
+        # Secondary pool: photos with the user's literal image_type frame, or the
+        # dominant type when the user didn't name one.
         if target_type:
-            relevant_photos = [p for p in kb["photos"]
-                               if p.get("image_type") == target_type]
+            secondary_type = target_type
         else:
-            # Fall back to dominant type
-            dominant_type = sorted_types[0][0] if sorted_types else "unknown"
-            relevant_photos = [p for p in kb["photos"]
-                               if p.get("image_type") == dominant_type]
+            secondary_type = sorted_types[0][0] if sorted_types else "unknown"
+        secondary_photos = [p for p in kb["photos"]
+                            if p.get("image_type") == secondary_type]
+
+        # Pick working pool: primary when non-empty, else secondary.
+        used_primary = bool(primary_pool)
+        if used_primary:
+            working: list[tuple[dict, int, str | None]] = primary_pool
+            max_match = max(cnt for _, cnt, _ in working) or 1
+        else:
+            working = [(p, 0, None) for p in secondary_photos]
+            max_match = 1
+
+        # Provenance: where did the answer actually come from?
+        if used_primary:
+            source_types: dict[str, int] = {}
+            for p, _, _ in working:
+                t = p.get("image_type", "unknown")
+                source_types[t] = source_types.get(t, 0) + 1
+            dominant_source = max(source_types, key=source_types.get) if source_types else "photo"
+            provenance = f"Based on {len(working)} {dominant_source} photos"
+            summary_parts.insert(0, provenance)
 
         results = []
-        for photo in relevant_photos:
-            score = 0.0
+        top1 = top_entities[0] if top_entities else None
+        for photo, match_cnt, best_entity in working:
+            score = 0.1  # Baseline
 
-            # Query keyword overlap with photo type
-            photo_type = _clean(photo.get("image_type", ""))
-            if photo_type in query_words:
-                score += 0.3
-
-            # Frequency ratio: how dominant is this pattern?
-            matched_type = target_type or (sorted_types[0][0] if sorted_types else None)
-            if matched_type and total_photos > 0:
-                freq_ratio = type_counts.get(matched_type, 0) / total_photos
-                score += freq_ratio * 0.4
-
-            # Entity match to query keywords
-            for entity in photo.get("entities", []):
-                val = _clean(entity.get("value", ""))
-                if any(w in val for w in query_words if len(w) > 2):
+            # Direct evidential support — the core signal
+            if used_primary:
+                score += 0.4 * (match_cnt / max_match)
+                if top1 and best_entity == top1:
                     score += 0.2
-                    break
 
-            # Behavioral aggregation always has some baseline value
-            score = max(score, 0.1)
+            # Image-type affinity (user's literal frame)
+            if photo.get("image_type") == target_type:
+                score += 0.2
+
+            # Fallback signals when there's no primary pool
+            if not used_primary:
+                photo_type = _clean(photo.get("image_type", ""))
+                if photo_type in query_words:
+                    score += 0.3
+                matched_type = target_type or (sorted_types[0][0] if sorted_types else None)
+                if matched_type and total_photos > 0:
+                    score += (type_counts.get(matched_type, 0) / total_photos) * 0.4
+
             score = min(score, 1.0)
 
             results.append({
@@ -577,6 +670,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 "relevance_score": round(score, 3),
                 "evidence": "; ".join(summary_parts),
                 "image_type": photo.get("image_type", "unknown"),
+                "matched_entity": best_entity,
             })
 
         results.sort(key=lambda x: x["relevance_score"], reverse=True)
@@ -683,10 +777,23 @@ class PhotoKnowledgeBaseTool(BaseTool):
         # Sort by fused score descending
         sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)
 
+        if not sorted_ids:
+            return []
+
+        # Normalize RRF scores to 0.2–1.0 so they are compatible with the
+        # confidence_threshold (default 0.15) and _score_to_grade boundaries.
+        max_rrf = rrf_scores[sorted_ids[0]]
+        min_rrf = rrf_scores[sorted_ids[-1]] if len(sorted_ids) > 1 else 0.0
+        rrf_range = max_rrf - min_rrf
+
         results = []
         for pid in sorted_ids[:top_k]:
             r = result_map[pid].copy()
-            r["relevance_score"] = round(rrf_scores[pid], 4)
+            if rrf_range > 0:
+                normalized = (rrf_scores[pid] - min_rrf) / rrf_range * 0.8 + 0.2
+            else:
+                normalized = 0.5
+            r["relevance_score"] = round(normalized, 4)
             r["evidence"] = f"[hybrid/RRF] {r.get('evidence', '')}"
             results.append(r)
         return results

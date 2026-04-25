@@ -1,1 +1,128 @@
-{}
+{
+  "history": [
+    {
+      "query": "Show me photos of food",
+      "query_type": "semantic",
+      "correct": false,
+      "confidence_score": 0.0,
+      "timestamp": "2026-04-25T02:57:12.127870+00:00"
+    },
+    {
+      "query": "Show me photos of food",
+      "query_type": "semantic",
+      "correct": true,
+      "confidence_score": 1.0,
+      "timestamp": "2026-04-25T03:16:52.697987+00:00"
+    },
+    {
+      "query": "Pepper",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:17:16.658352+00:00"
+    },
+    {
+      "query": "Pepper",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:17:21.855462+00:00"
+    },
+    {
+      "query": "Pepper",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:17:24.108227+00:00"
+    },
+    {
+      "query": "Pepper",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:17:26.763540+00:00"
+    },
+    {
+      "query": "Pepper mill",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:26:02.911172+00:00"
+    },
+    {
+      "query": "Pepper mill",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:26:08.616859+00:00"
+    },
+    {
+      "query": "Pepper mill",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:26:10.911388+00:00"
+    },
+    {
+      "query": "Pepper mill",
+      "query_type": "behavioral",
+      "correct": false,
+      "confidence_score": 0.5,
+      "timestamp": "2026-04-25T03:26:13.010385+00:00"
+    },
+    {
+      "query": "How much did I spend at ALDI?",
+      "query_type": "factual",
+      "correct": true,
+      "confidence_score": 0.0,
+      "timestamp": "2026-04-25T03:35:12.821078+00:00"
+    },
+    {
+      "query": "How much did I spend at Patel Brothers?",
+      "query_type": "factual",
+      "correct": true,
+      "confidence_score": 0.0,
+      "timestamp": "2026-04-25T03:36:04.025476+00:00"
+    },
+    {
+      "query": "write me a code",
+      "query_type": "semantic",
+      "correct": true,
+      "confidence_score": 1.0,
+      "timestamp": "2026-04-25T04:25:31.935550+00:00"
+    },
+    {
+      "query": "whats the capital of france",
+      "query_type": "semantic",
+      "correct": false,
+      "confidence_score": 1.0,
+      "timestamp": "2026-04-25T04:25:44.741747+00:00"
+    },
+    {
+      "query": "chemisty",
+      "query_type": "semantic",
+      "correct": true,
+      "confidence_score": 0.0,
+      "timestamp": "2026-04-25T04:47:01.820247+00:00"
+    }
+  ],
+  "strategy_stats": {
+    "factual": {
+      "correct": 2,
+      "total": 2
+    },
+    "semantic": {
+      "correct": 3,
+      "total": 5
+    },
+    "behavioral": {
+      "correct": 0,
+      "total": 8
+    }
+  },
+  "confidence_adjustments": {
+    "factual": 0.0,
+    "semantic": 0.05,
+    "behavioral": 0.05
+  }
+}

@@ -30,7 +30,7 @@ python -m src.main query "How much did I spend at ALDI?"
 # Run evaluation suite (20 test queries, results → eval/results/eval_results.json)
 python -m src.main eval
 
-# Train RL components (offline — no API calls; ~60s on CPU for 2000 eps x 5 seeds)
+# Train RL components (offline — no API calls; ~120s on CPU for 4000 eps x 5 seeds)
 python -m src.main train
 
 # Run RL evaluation: 4 configs x 5 seeds x 56 queries → eval/results/rl_eval_results.json
@@ -40,7 +40,7 @@ python -m src.main rl-eval
 python -m src.main ablation
 ```
 
-No test framework (pytest, etc.) — evaluation is the test suite via `python -m src.main eval`.
+No test framework (pytest, etc.) — evaluation is the test suite via `python -m src.main eval`. Unit tests exist in `tests/` (96 tests across 3 files: test_core.py, test_search_strategies.py, test_repository.py) and run via `pytest tests/ -v`.
 
 RL training requires no API keys; trained models are saved to `knowledge_base/rl_models/` and
 loaded automatically by `PhotoKnowledgeBaseTool` at query time (with fallback to rule-based).
@@ -98,15 +98,15 @@ Eval history is tracked in `eval/results/eval_history.json` for trend analysis.
 **RL Approach 1 — Contextual Bandits** (`src/rl/contextual_bandit.py`)
 - Replaces rule-based `_classify_query()` with a learned routing policy
 - Three algorithms: `ThompsonSamplingBandit`, `UCBBandit`, `EpsilonGreedyBandit`
-- Context: KMeans clusters (k=4) on 12-dim query feature vectors (`feature_extractor.py`)
+- Context: KMeans clusters (k=4) on 396-dim hybrid query feature vectors (12 handcrafted + 384 MiniLM embedding dims) (`feature_extractor.py`)
 - Trained offline via `PhotoMindSimulator` — zero API calls
 
 **RL Approach 2 — DQN Confidence Calibrator** (`src/rl/dqn_confidence.py`)
 - Replaces static `_score_to_grade()` with a learned accept/hedge/decline policy
-- Architecture: FC(8→64) → ReLU → FC(64→64) → ReLU → FC(64→4) — same as LunarLander DQN
+- Architecture: FC(8→64) → ReLU → FC(64→64) → ReLU → FC(64→5) — adapted from LunarLander DQN (extended with requery action)
 - State dim=8: top score, score gap, result count, strategy index, query features, entity match indicators
-- Actions: `accept_high`, `accept_moderate`, `hedge`, `decline`
-- Reward matrix penalizes silent failures (confident-but-wrong) at -1.0
+- Actions: `accept_high`, `accept_moderate`, `hedge`, `requery`, `decline`
+- Reward: outcome-based aggregate with `expected_top_entity`; penalizes silent failures (confident-but-wrong) at -1.0
 
 **Integration:** `PhotoKnowledgeBaseTool._rl_classify_query()` and `_rl_confidence_grade()` try RL first, fall back to rule-based if models not found. Trained models at `knowledge_base/rl_models/`.
 
@@ -117,6 +117,8 @@ Eval history is tracked in `eval/results/eval_history.json` for trend analysis.
 `eval/test_cases.py` has 20 hand-labeled test queries across 4 categories: factual (7), semantic (5), behavioral (4), edge cases (4). Edge cases have `should_decline: True` — the system should gracefully refuse rather than hallucinate.
 
 `eval/expanded_test_cases.py` adds 36 more queries (7 factual, 6 semantic, 6 behavioral, 6 edge cases, 11 ambiguous) for a total of 56 queries (`ALL_TEST_CASES`). The 11 ambiguous queries are critical for demonstrating RL value — they expose cases where keyword routing systematically fails.
+
+`eval/novel_test_cases.py` adds 15 intent-shift queries that probe robustness to mid-sentence category switches. Run via `python -m src.main eval --suite=novel`.
 
 `eval/run_evaluation.py` measures: retrieval accuracy, routing accuracy, silent failure rate, decline accuracy, and per-query latency.
 

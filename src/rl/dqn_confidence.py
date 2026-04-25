@@ -21,6 +21,7 @@ from src.rl.rl_config import (
     DQN_EPSILON_DECAY, DQN_BUFFER_SIZE, DQN_BATCH_SIZE,
     DQN_TAU, DQN_UPDATE_EVERY, ACTION_NAMES,
     REQUERY_ACTION, DECLINE_ACTION, MAX_REQUERY_STEPS,
+    ARM_NAMES,
 )
 
 
@@ -45,8 +46,8 @@ class ConfidenceState:
         state[1] = (scores_sorted[0] - scores_sorted[1]) if len(scores_sorted) >= 2 else 0.0
         # 2: number of results (normalized)
         state[2] = min(len(results) / 10.0, 1.0)
-        # 3: strategy index (normalized to [0, 1])
-        state[3] = strategy_idx / 2.0
+        # 3: strategy index (normalized to [0, 1] across all arms)
+        state[3] = strategy_idx / max(len(ARM_NAMES) - 1, 1)
         # 4: query length (from features)
         state[4] = query_features[0] if len(query_features) > 0 else 0.0
         # 5: has exact entity match
@@ -54,11 +55,12 @@ class ConfidenceState:
                               "vendor" in r.get("evidence", "").lower() or
                               "amount" in r.get("evidence", "").lower()
                               for r in results) else 0.0
-        # 6: type matches strategy expectation
-        strategy_type_map = {0: "receipt", 1: "food", 2: "food"}
-        expected_type = strategy_type_map.get(strategy_idx, "")
-        if results and results[0].get("image_type", "") == expected_type:
-            state[6] = 1.0
+        # 6: retrieval confidence signal — is the top result actually strong?
+        # (Replaces a prior hardcoded arm->image_type map that excluded the
+        # embedding arm and conflated factual with "receipt" only. An outcome-
+        # based signal is robust to strategy additions and cross-strategy reuse.)
+        top_score = scores_sorted[0] if scores_sorted else 0.0
+        state[6] = 1.0 if top_score >= 0.5 else 0.0
         # 7: average score
         state[7] = np.mean(scores) if scores else 0.0
 
@@ -244,6 +246,42 @@ def action_to_grade(action: int, score: float = 0.5) -> str:
         return "REQUERY"
     else:  # decline
         return "F"
+
+
+def resolve_confidence_grade(
+    dqn_agent: "ConfidenceDQNAgent",
+    search_results: list,
+    arm: int,
+    features: dict,
+    cached: dict,
+) -> tuple[str, int]:
+    """Run DQN grading with requery loop. Returns (grade, final_arm).
+
+    Shared by training_pipeline.py and run_rl_evaluation.py to avoid
+    duplicating the requery-loop logic.
+    """
+    state = ConfidenceState.from_retrieval(search_results, arm, features)
+    action = dqn_agent.select_action(state)
+    score = search_results[0]["relevance_score"] if search_results else 0.0
+    grade = action_to_grade(action, score)
+
+    current_arm = arm
+    requery_count = 0
+    while grade == "REQUERY" and requery_count < MAX_REQUERY_STEPS:
+        alt_arms = [a for a in range(len(ARM_NAMES)) if a != current_arm]
+        alt_arm = random.choice(alt_arms)
+        search_results = cached.get(ARM_NAMES[alt_arm], [])
+        current_arm = alt_arm
+        state = ConfidenceState.from_retrieval(search_results, current_arm, features)
+        action = dqn_agent.select_action(state)
+        score = search_results[0]["relevance_score"] if search_results else 0.0
+        grade = action_to_grade(action, score)
+        requery_count += 1
+
+    if grade == "REQUERY":
+        grade = "D"  # fallback: treat as hedge
+
+    return grade, current_arm
 
 
 def load_trained_dqn(path: str) -> ConfidenceDQNAgent | None:

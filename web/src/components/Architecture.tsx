@@ -13,10 +13,11 @@ import { NPR } from '../theme'
 import { alpha } from '@mui/material/styles'
 
 interface ArchData {
-  agents: { name: string; role: string; description: string }[]
+  agents: { name: string; role: string; crew?: string; description: string }[]
   search_strategies: { name: string; description: string; type: string }[]
-  rl_components: { name: string; type: string; purpose: string; state: string; actions: string }[]
+  rl_components: { name: string; type: string; purpose: string; state: string; actions: string; training?: string }[]
   pipeline_modes: { name: string; description: string; cost: string }[]
+  storage?: { backend: string; collection: string; embedding_model: string; fallback: string }
 }
 
 export default function Architecture() {
@@ -70,7 +71,7 @@ export default function Architecture() {
             <Grid size={{ xs: 12, md: 6 }} key={m.name}>
               <Paper sx={{ p: 2, bgcolor: NPR.surface, borderRadius: 2 }}>
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                  <AccountTreeIcon sx={{ color: NPR.heliconia }} fontSize="small" />
+                  <AccountTreeIcon sx={{ color: NPR.jayBlue }} fontSize="small" />
                   <Typography sx={{ fontWeight: 600, textTransform: 'capitalize' }}>{m.name} Mode</Typography>
                   <Box sx={{ flexGrow: 1 }} />
                   <Chip size="small" label={m.cost} />
@@ -81,6 +82,38 @@ export default function Architecture() {
           ))}
         </Grid>
       </Paper>
+
+      {data.storage && (
+        <Paper sx={{ p: 2, borderRadius: 3 }}>
+          <Typography variant="overline" color="text.secondary">Storage Backend</Typography>
+          <Grid container spacing={2} sx={{ mt: 0.5 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Paper sx={{ p: 1.5, bgcolor: NPR.surface, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Backend</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{data.storage.backend}</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Paper sx={{ p: 1.5, bgcolor: NPR.surface, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Collection</Typography>
+                <Typography variant="body2" sx={{ fontFamily: 'ui-monospace, monospace', color: NPR.jayBlue }}>{data.storage.collection}</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Paper sx={{ p: 1.5, bgcolor: NPR.surface, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Embedding Model</Typography>
+                <Typography variant="body2" sx={{ fontFamily: 'ui-monospace, monospace' }}>{data.storage.embedding_model}</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Paper sx={{ p: 1.5, bgcolor: NPR.surface, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Fallback</Typography>
+                <Typography variant="body2">{data.storage.fallback}</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+        </Paper>
+      )}
 
       <Paper sx={{ p: 2, borderRadius: 3 }}>
         <Typography variant="overline" color="text.secondary">CrewAI Agent Architecture (Hierarchical)</Typography>
@@ -106,9 +139,17 @@ export default function Architecture() {
                     <SmartToyIcon />
                   </Box>
                   <Box sx={{ flexGrow: 1 }}>
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                       <Typography sx={{ fontWeight: 600 }}>{agent.name}</Typography>
                       <Chip size="small" label={agent.role} sx={{ bgcolor: alpha(isManager ? NPR.heliconia : NPR.jayBlue, 0.1), color: isManager ? NPR.heliconia : NPR.jayBlue }} />
+                      {agent.crew && (
+                        <Chip
+                          size="small"
+                          label={agent.crew}
+                          variant="outlined"
+                          sx={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, textTransform: 'lowercase' }}
+                        />
+                      )}
                     </Stack>
                     <Typography variant="body2" color="text.secondary">{agent.description}</Typography>
                   </Box>
@@ -132,7 +173,7 @@ export default function Architecture() {
                 <Paper sx={{ p: 2, bgcolor: NPR.surface, borderRadius: 2 }}>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                     <SearchIcon fontSize="small" sx={{ color: NPR.jayBlue }} />
-                    <Typography sx={{ fontFamily: 'ui-monospace, monospace', fontSize: 14, color: NPR.heliconia }}>
+                    <Typography sx={{ fontFamily: 'ui-monospace, monospace', fontSize: 14, color: NPR.jayBlue }}>
                       {s.name}
                     </Typography>
                     <Chip size="small" label={s.type} variant="outlined" />
@@ -157,13 +198,18 @@ export default function Architecture() {
             >
               <Paper sx={{ p: 2, bgcolor: NPR.surface, borderRadius: 2 }}>
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                  <PsychologyIcon fontSize="small" sx={{ color: NPR.heliconia }} />
+                  <PsychologyIcon fontSize="small" sx={{ color: NPR.jayBlue }} />
                   <Typography sx={{ fontWeight: 600 }}>{rl.name}</Typography>
                   <Chip size="small" label={rl.type} variant="outlined" />
                 </Stack>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                   {rl.purpose}
                 </Typography>
+                {rl.training && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                    <Box component="strong" sx={{ color: NPR.midnight }}>Training: </Box>{rl.training}
+                  </Typography>
+                )}
                 <Grid container spacing={1}>
                   <Grid size={{ xs: 12, md: 6 }}>
                     <Paper sx={{ p: 1, bgcolor: NPR.white, borderRadius: 1 }}>
@@ -233,11 +279,10 @@ function PipelineDiagram() {
         sx={{
           position: 'absolute', top: '50%', left: '4%',
           width: 10, height: 10, borderRadius: '50%',
-          bgcolor: NPR.heliconia,
-          boxShadow: `0 0 14px 2px ${alpha(NPR.heliconia, 0.6)}`,
+          bgcolor: NPR.jayBlue,
+          boxShadow: `0 0 14px 2px ${alpha(NPR.jayBlue, 0.6)}`,
           transform: 'translate(-50%, -50%)',
-          '--flow-distance': '100%',
-          animation: 'flow-dot 3.6s ease-in-out infinite',
+          animation: 'flow-dot 5s ease-in-out infinite',
         }}
       />
 

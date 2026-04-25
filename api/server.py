@@ -14,6 +14,7 @@ Run: uvicorn api.server:app --reload --port 8000
 
 import json
 import os
+import re
 import time
 import base64
 from collections import OrderedDict
@@ -22,7 +23,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
@@ -209,6 +210,7 @@ class FeedbackRequest(BaseModel):
     query: str
     strategy: str
     was_correct: bool
+    confidence_score: float = 0.0
 
 
 # ── Routes: Query ────────────────────────────────────────────────────────
@@ -273,6 +275,57 @@ def _fast_query(req: QueryRequest, start: float, user_id: str | None = None) -> 
     return result
 
 
+def _parse_crew_confidence(result_text: str) -> tuple[str, float]:
+    """Extract confidence grade and score from CrewAI crew output text.
+
+    Returns (grade, score) with sensible defaults if parsing fails.
+    """
+    text = result_text.lower()
+    text_clean = re.sub(r'\*+', '', text)
+
+    # Try JSON parse first
+    try:
+        json_text = result_text.strip()
+        if json_text.startswith("```"):
+            json_text = json_text.split("\n", 1)[1] if "\n" in json_text else json_text[3:]
+            if json_text.endswith("```"):
+                json_text = json_text[:-3].strip()
+        data = json.loads(json_text)
+        if isinstance(data, dict):
+            grade = data.get("confidence_grade", "").upper()
+            if grade in ("A", "B", "C", "D", "F"):
+                score = float(data.get("confidence_score", 0.0))
+                return grade, score
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+
+    # Regex extraction for grade
+    grade = "B"  # default fallback
+    for g in ["A", "B", "C", "D", "F"]:
+        gl = g.lower()
+        if (
+            re.search(rf'\bconfidence[_ ]?grade[^:]*:\s*["\']?{gl}["\']?', text_clean)
+            or re.search(rf'\bgrade[^a-z]*:\s*["\']?{gl}["\']?\b', text_clean)
+            or f'"confidence_grade": "{gl}"' in text
+            or f"confidence_grade: {gl}" in text_clean
+        ):
+            grade = g
+            break
+
+    # Regex extraction for score
+    score = {"A": 0.9, "B": 0.7, "C": 0.5, "D": 0.3, "F": 0.1}.get(grade, 0.5)
+    score_match = re.search(r'confidence_score["\s:]+([0-9]+\.[0-9]+)', text)
+    if not score_match:
+        score_match = re.search(r'confidence["\s:]+([0-9]+\.[0-9]+)', text)
+    if score_match:
+        try:
+            score = float(score_match.group(1))
+        except ValueError:
+            pass
+
+    return grade, score
+
+
 def _full_query(req: QueryRequest, start: float) -> dict:
     """CrewAI pipeline — GPT-4o reasoning, costs money, 15-45s."""
     import sys
@@ -287,21 +340,161 @@ def _full_query(req: QueryRequest, start: float) -> dict:
 
         # Try to parse structured output from crew
         result_text = str(result)
+        grade, score = _parse_crew_confidence(result_text)
+        photos = re.findall(r'[\w\-]+\.(?:jpg|jpeg|png|webp|heic)', result_text, re.IGNORECASE)
         return {
             "query": req.query,
             "mode": "full",
             "query_type_detected": "crewai_hierarchical",
             "results": [],
-            "confidence_grade": "A",
-            "confidence_score": 0.9,
+            "confidence_grade": grade,
+            "confidence_score": score,
             "answer_summary": result_text[:2000],
-            "source_photos": [],
+            "source_photos": [p.lower() for p in photos],
             "warning": None,
             "latency_s": round(elapsed, 3),
             "routing_source": "crewai_hierarchical_process",
         }
     except Exception as e:
         raise HTTPException(500, f"CrewAI query failed: {str(e)}")
+
+
+# ── Routes: Streaming Query (SSE) ────────────────────────────────────────
+
+def _format_sse(event: str, data: dict) -> str:
+    """Format a Server-Sent Events message."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+async def _stream_fast_query(req: "QueryRequest", user_id: str | None):
+    """Stream a fast-mode query as SSE events.
+
+    Emits: routing → retrieval → token* → done. The LLM is never invoked in
+    fast mode; tokens here are chunks of the deterministic answer_summary
+    so the UI can render progressively. Free; perceived latency <200 ms.
+    """
+    import asyncio
+    import sys as _sys
+    _sys.path.insert(0, str(PROJECT_ROOT))
+    from src.tools.photo_knowledge_base import PhotoKnowledgeBaseTool
+
+    start = time.time()
+
+    # Cache hit: emit final event immediately
+    cache_key = (req.query, req.query_type, req.top_k, user_id)
+    cached = _query_cache.get(cache_key)
+    if cached is not None:
+        yield _format_sse("routing", {"source": "cache", "query_type_detected": cached.get("query_type_detected")})
+        yield _format_sse("done", {**cached, "latency_s": round(time.time() - start, 3), "cached": True})
+        return
+
+    yield _format_sse("routing", {"stage": "classifying", "query": req.query})
+    await asyncio.sleep(0)  # cooperative yield
+
+    repo = _get_repo(user_id=user_id)
+    tool = PhotoKnowledgeBaseTool(knowledge_base_path=str(KB_PATH), repository=repo)
+    raw = tool._run(query=req.query, query_type=req.query_type, top_k=req.top_k)
+    parsed = json.loads(raw)
+
+    yield _format_sse("retrieval", {
+        "query_type_detected": parsed.get("query_type_detected"),
+        "result_count": len(parsed.get("results", [])),
+        "confidence_grade": parsed.get("confidence_grade"),
+    })
+
+    summary = parsed.get("answer_summary", "") or ""
+    # Chunk into ~40-char pieces for progressive rendering
+    chunk_size = 40
+    for i in range(0, len(summary), chunk_size):
+        yield _format_sse("token", {"text": summary[i:i + chunk_size]})
+        await asyncio.sleep(0.02)
+
+    final = {
+        "query": req.query,
+        "mode": "fast",
+        "query_type_detected": parsed.get("query_type_detected", "unknown"),
+        "results": parsed.get("results", []),
+        "confidence_grade": parsed.get("confidence_grade", "F"),
+        "confidence_score": parsed.get("confidence_score", 0.0),
+        "answer_summary": summary,
+        "source_photos": parsed.get("source_photos", []),
+        "warning": parsed.get("warning"),
+        "latency_s": round(time.time() - start, 3),
+        "routing_source": parsed.get("routing_rationale", ""),
+    }
+    _query_cache.put(cache_key, final)
+    yield _format_sse("done", {**final, "cached": False})
+
+
+async def _stream_full_query(req: "QueryRequest"):
+    """Stream a full-mode (CrewAI + GPT-4o) query as SSE events.
+
+    Wraps the blocking crew.kickoff() in a threadpool and emits stage events
+    around it. Does NOT reduce wall-clock latency, but surfaces progress to
+    the UI so users see activity instead of a 45-second spinner.
+    """
+    import asyncio
+    import sys as _sys
+    _sys.path.insert(0, str(PROJECT_ROOT))
+
+    start = time.time()
+    yield _format_sse("routing", {"stage": "crewai_bootstrapping"})
+    try:
+        from src.crews.query_crew import create_query_crew
+        crew = create_query_crew()
+    except Exception as e:
+        yield _format_sse("error", {"message": f"Crew init failed: {e}"})
+        return
+
+    yield _format_sse("agent_step", {"agent": "Controller", "stage": "classifying"})
+
+    def _blocking_kickoff():
+        return crew.kickoff(inputs={"user_query": req.query})
+
+    try:
+        result = await asyncio.to_thread(_blocking_kickoff)
+    except Exception as e:
+        yield _format_sse("error", {"message": f"CrewAI query failed: {e}"})
+        return
+
+    yield _format_sse("agent_step", {"agent": "Synthesizer", "stage": "completed"})
+    result_text = str(result)
+    grade, score = _parse_crew_confidence(result_text)
+    photos = re.findall(r'[\w\-]+\.(?:jpg|jpeg|png|webp|heic)', result_text, re.IGNORECASE)
+    yield _format_sse("done", {
+        "query": req.query,
+        "mode": "full",
+        "query_type_detected": "crewai_hierarchical",
+        "answer_summary": result_text[:2000],
+        "confidence_grade": grade,
+        "confidence_score": score,
+        "source_photos": [p.lower() for p in photos],
+        "results": [],
+        "warning": None,
+        "latency_s": round(time.time() - start, 3),
+        "routing_source": "crewai_hierarchical_process",
+    })
+
+
+@app.post("/api/query/stream")
+async def query_stream(
+    req: QueryRequest,
+    _=Depends(verify_api_key),
+    x_user_id: str | None = Header(None),
+):
+    """SSE streaming variant of /api/query.
+
+    Fast mode: streams routing/retrieval/token events and a final `done` event
+    (zero OpenAI cost). Full mode: streams coarse agent-step events around the
+    blocking CrewAI call. Consume with an EventSource client or `curl -N`.
+    """
+    if req.mode == "fast":
+        generator = _stream_fast_query(req, user_id=x_user_id)
+    elif req.mode == "full":
+        generator = _stream_full_query(req)
+    else:
+        raise HTTPException(400, f"Unknown mode: {req.mode}. Use 'fast' or 'full'.")
+    return StreamingResponse(generator, media_type="text/event-stream")
 
 
 # ── Routes: Knowledge Base ───────────────────────────────────────────────
@@ -387,9 +580,60 @@ async def get_photo_thumbnail(photo_id: str):
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=80)
         b64 = base64.b64encode(buf.getvalue()).decode()
-        return {"photo_id": photo_id, "data_url": f"data:image/jpeg;base64,{b64}"}
+        return JSONResponse(
+            content={"photo_id": photo_id, "data_url": f"data:image/jpeg;base64,{b64}"},
+            headers={"Cache-Control": "public, max-age=86400"}  # 24 hour cache
+        )
     except Exception as e:
         raise HTTPException(500, f"Failed to generate thumbnail: {e}")
+
+
+@app.get("/api/photos/{photo_id}/image")
+async def get_photo_image(photo_id: str):
+    """Return full-size image as base64 data URL with caching."""
+    kb = _load_kb()
+    if not kb:
+        raise HTTPException(503, "Knowledge base not loaded")
+
+    # Find photo entry (field is "id", not "photo_id")
+    photo = next((p for p in kb.get("photos", []) if p["id"] == photo_id), None)
+    if not photo:
+        raise HTTPException(404, f"Photo not found: {photo_id}")
+
+    file_path = PROJECT_ROOT / photo["file_path"]
+    if not file_path.exists():
+        raise HTTPException(404, f"Image file not found: {photo['file_path']}")
+
+    try:
+        from PIL import Image
+        import io
+
+        # Handle HEIC format
+        suffix = file_path.suffix.lower()
+        if suffix == ".heic":
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+
+        with Image.open(file_path) as img:
+            # Convert to RGB if needed
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+
+            # Keep original size but optimize quality
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            return JSONResponse(
+                content={
+                    "photo_id": photo_id,
+                    "data_url": f"data:image/jpeg;base64,{b64}",
+                    "width": img.width,
+                    "height": img.height
+                },
+                headers={"Cache-Control": "public, max-age=604800"}  # 7 day cache
+            )
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load image: {e}")
 
 
 # ── Routes: Eval Results ─────────────────────────────────────────────────
@@ -439,8 +683,13 @@ async def submit_feedback(req: FeedbackRequest, _=Depends(verify_api_key)):
     sys.path.insert(0, str(PROJECT_ROOT))
 
     from src.tools.feedback_store import FeedbackStore
-    store = FeedbackStore()
-    store.record_feedback(req.strategy, req.was_correct)
+    store = FeedbackStore(path=str(FEEDBACK_PATH))
+    store.record_outcome(
+        query=req.query,
+        query_type=req.strategy,
+        correct=req.was_correct,
+        confidence_score=req.confidence_score,
+    )
     return {"status": "ok", "message": f"Feedback recorded for strategy '{req.strategy}'"}
 
 
@@ -489,22 +738,26 @@ async def get_architecture():
             {
                 "name": "Controller Agent",
                 "role": "manager",
-                "description": "Orchestrates query routing, delegates to specialist agents, synthesizes final response",
+                "crew": "query",
+                "description": "Receives the user query, classifies intent, and delegates to specialist agents (planning=True, hierarchical).",
             },
             {
                 "name": "Photo Analyst",
                 "role": "specialist",
-                "description": "Analyzes photo content using GPT-4o Vision for descriptions, OCR, entity extraction",
+                "crew": "ingestion",
+                "description": "Analyzes photo content with GPT-4o Vision during ingestion — produces OCR, description, entities, and image_type.",
             },
             {
                 "name": "Knowledge Retriever",
                 "role": "specialist",
-                "description": "Searches the knowledge base using 4 strategies: factual, semantic, behavioral, embedding",
+                "crew": "shared",
+                "description": "Searches the knowledge base via PhotoKnowledgeBaseTool (4 strategies, RL-routed). Used in both ingestion and query crews.",
             },
             {
                 "name": "Insight Synthesizer",
                 "role": "specialist",
-                "description": "Combines retrieved evidence into coherent, confidence-graded answers",
+                "crew": "query",
+                "description": "Combines retrieved evidence into a graded A–F answer with source attribution (query crew only).",
             },
         ],
         "search_strategies": [
@@ -517,22 +770,33 @@ async def get_architecture():
             {
                 "name": "Contextual Bandit",
                 "type": "Thompson Sampling / UCB1 / Epsilon-Greedy",
-                "purpose": "Query routing — selects which search strategy to use",
-                "state": "12-dim feature vector from QueryFeatureExtractor",
+                "purpose": "Query routing — selects which search strategy (arm) to use",
+                "state": (
+                    "KMeans cluster id (k=4) over 396-dim hybrid query vector "
+                    "(12 handcrafted features + 384-dim MiniLM embedding, sentence-transformers/all-MiniLM-L6-v2)"
+                ),
                 "actions": "4 arms (factual, semantic, behavioral, embedding)",
+                "training": "Offline PhotoMindSimulator, 4000 episodes × 5 seeds, zero API cost",
             },
             {
                 "name": "DQN Confidence Calibrator",
                 "type": "Deep Q-Network (FC 8→64→64→5)",
-                "purpose": "Confidence grading — decides how confident to be in results",
+                "purpose": "Confidence grading — decides whether to accept, hedge, requery, or decline",
                 "state": "8-dim state (top score, result count, score spread, strategy idx, query features)",
                 "actions": "5 actions (accept_high, accept_moderate, hedge, requery, decline)",
+                "training": "Offline PhotoMindSimulator, 4000 episodes × 5 seeds, silent-failure penalty −1.0",
             },
         ],
         "pipeline_modes": [
-            {"name": "fast", "description": "Direct Python search with RL routing. No API calls. <1s.", "cost": "Free"},
-            {"name": "full", "description": "CrewAI hierarchical pipeline with GPT-4o. 15-45s.", "cost": "~$0.01-0.05/query"},
+            {"name": "fast", "description": "Direct Qdrant vector + keyword search with RL routing. No LLM calls. <1 s.", "cost": "Free"},
+            {"name": "full", "description": "CrewAI hierarchical pipeline (Controller → Retriever → Synthesizer) with GPT-4o. ~40 s.", "cost": "~$0.01–0.05/query"},
         ],
+        "storage": {
+            "backend": "Qdrant (vector) with JSON fallback",
+            "collection": "photos",
+            "embedding_model": "all-MiniLM-L6-v2 (384-dim)",
+            "fallback": "JsonPhotoRepository reads knowledge_base/photo_index.json",
+        },
     }
 
 

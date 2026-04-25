@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   AppBar, Toolbar, Tabs, Tab, Box, Container, Typography, Stack,
 } from '@mui/material'
@@ -12,6 +12,9 @@ import KBBrowser from './components/KBBrowser'
 import Dashboard from './components/Dashboard'
 import Architecture from './components/Architecture'
 import ApertureLogo from './components/ApertureLogo'
+import Hero from './components/Hero'
+import HowItWorks from './components/HowItWorks'
+import PageHeader from './components/PageHeader'
 import { NPR } from './theme'
 
 const tabs = [
@@ -25,6 +28,11 @@ type TabId = (typeof tabs)[number]['id']
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('query')
+  const demoRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollToDemo = () => {
+    demoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: NPR.white, color: NPR.midnight }}>
@@ -69,10 +77,50 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
         >
-          {activeTab === 'query' && <QueryPage />}
-          {activeTab === 'kb' && <KBBrowser />}
-          {activeTab === 'dashboard' && <Dashboard />}
-          {activeTab === 'architecture' && <Architecture />}
+          {activeTab === 'query' && (
+            <>
+              <Hero onCTAClick={scrollToDemo} />
+              <HowItWorks />
+              <Box ref={demoRef} sx={{ scrollMarginTop: 80 }}>
+                <PageHeader
+                  overline="Live demo"
+                  title="Ask your photos anything."
+                  subtitle="Try a question. Every answer comes back with the exact photos it was drawn from — and a grade telling you how much to trust it."
+                />
+                <QueryPage />
+              </Box>
+            </>
+          )}
+          {activeTab === 'kb' && (
+            <>
+              <PageHeader
+                overline="Knowledge base"
+                title="Every photo, indexed and searchable."
+                subtitle="The 25 photos PhotoMind reads before answering. Filter by type, search text, and expand any card to see extracted OCR and entities."
+              />
+              <KBBrowser />
+            </>
+          )}
+          {activeTab === 'dashboard' && (
+            <>
+              <PageHeader
+                overline="Performance"
+                title="How well does it actually work?"
+                subtitle="Evaluation results across 20 test queries, ablation studies over 5 seeds, and training curves from the DQN calibrator."
+              />
+              <Dashboard />
+            </>
+          )}
+          {activeTab === 'architecture' && (
+            <>
+              <PageHeader
+                overline="Architecture"
+                title="Under the hood."
+                subtitle="A hierarchical CrewAI system with a contextual bandit router, a DQN confidence calibrator, and four retrieval strategies."
+              />
+              <Architecture />
+            </>
+          )}
         </motion.div>
       </Container>
     </Box>

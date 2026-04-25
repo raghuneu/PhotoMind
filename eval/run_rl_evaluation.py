@@ -8,7 +8,7 @@ from eval.test_cases import TEST_CASES
 from eval.statistical_analysis import confidence_interval, paired_t_test, cohens_d, format_ci
 from src.rl.simulation_env import PhotoMindSimulator
 from src.rl.contextual_bandit import ThompsonSamplingBandit
-from src.rl.dqn_confidence import ConfidenceDQNAgent, ConfidenceState, action_to_grade
+from src.rl.dqn_confidence import ConfidenceDQNAgent, ConfidenceState, action_to_grade, resolve_confidence_grade
 from src.rl.rl_config import (
     ARM_NAMES, N_TRAINING_EPISODES, SEEDS, AUGMENTATION_FACTOR,
     REQUERY_ACTION, MAX_REQUERY_STEPS,
@@ -49,27 +49,7 @@ def _evaluate_config(sim, test_cases, bandit=None, dqn_agent=None, use_rule_rout
 
         # Confidence grading
         if dqn_agent:
-            state = ConfidenceState.from_retrieval(search_results, arm, features)
-            action = dqn_agent.select_action(state)
-            score = search_results[0]["relevance_score"] if search_results else 0.0
-            grade = action_to_grade(action, score)
-            # Handle requery at eval: try alternate strategy, re-grade
-            requery_eval = 0
-            current_arm = arm
-            while grade == "REQUERY" and requery_eval < MAX_REQUERY_STEPS:
-                import random as _rand
-                alt_arms = [a for a in range(len(ARM_NAMES)) if a != current_arm]
-                alt_arm = _rand.choice(alt_arms)
-                alt_strategy = ARM_NAMES[alt_arm]
-                search_results = cached.get(alt_strategy, [])
-                current_arm = alt_arm
-                state = ConfidenceState.from_retrieval(search_results, current_arm, features)
-                action = dqn_agent.select_action(state)
-                score = search_results[0]["relevance_score"] if search_results else 0.0
-                grade = action_to_grade(action, score)
-                requery_eval += 1
-            if grade == "REQUERY":
-                grade = "D"  # fallback: treat as hedge
+            grade, _ = resolve_confidence_grade(dqn_agent, search_results, arm, features, cached)
         else:
             score = search_results[0]["relevance_score"] if search_results else 0.0
             if score >= 0.7: grade = "A"
@@ -153,7 +133,7 @@ def run_rl_eval(n_episodes: int = N_TRAINING_EPISODES, seeds: list | None = None
         print(f"Using original test suite: {len(full_test_cases)} queries (no held-out split)")
 
     configs = [
-        {"name": "Baseline (Rule-Based)", "bandit": False, "dqn": False, "rule_routing": True},
+        {"name": "Baseline (Rule-Based)", "bandit": False, "dqn": False, "rule_routing": True, "deterministic": True},
         {"name": "Bandit Only (Thompson)", "bandit": True, "dqn": False, "rule_routing": False},
         {"name": "DQN Only", "bandit": False, "dqn": True, "rule_routing": True},
         {"name": "Full RL (Thompson+DQN)", "bandit": True, "dqn": True, "rule_routing": False},
@@ -169,9 +149,14 @@ def run_rl_eval(n_episodes: int = N_TRAINING_EPISODES, seeds: list | None = None
 
     for config in configs:
         config_name = config["name"]
+        is_deterministic = config.get("deterministic", False)
+        # Deterministic configs (rule-based routing + no RL) produce identical
+        # metrics across seeds by construction — run once and label as such
+        # instead of reporting 5 duplicate rows as if they demonstrated variance.
+        effective_seeds = [seeds[0]] if is_deterministic else seeds
         per_seed_metrics = {"full": [], "held_out": []}
 
-        for seed in seeds:
+        for seed in effective_seeds:
             _set_seed(seed)
 
             trained_bandit = None
@@ -225,15 +210,21 @@ def run_rl_eval(n_episodes: int = N_TRAINING_EPISODES, seeds: list | None = None
         all_config_results[config_name] = {
             "per_seed": per_seed_metrics,
             "aggregated": aggregated,
+            "deterministic": is_deterministic,
+            "n_seeds": len(effective_seeds),
         }
 
     # Print comparison table — Full test set
     print(f"\n=== Full Test Set ({len(full_test_cases)} queries) ===")
     print(f"{'Config':<30} {'Retrieval':>24} {'Routing':>24} {'SilentFail':>24} {'Decline':>24}")
     print("-" * 130)
+    print("[det.] = deterministic (n=1); non-det. configs report mean over "
+          f"{len(seeds)} seeds with 95% CI.")
+    print("-" * 130)
     for name, data in all_config_results.items():
         agg = data["aggregated"]["full"]
-        print(f"{name:<30} "
+        display_name = f"{name} [det.]" if data.get("deterministic") else name
+        print(f"{display_name:<30} "
               f"{format_ci(agg['retrieval_accuracy']['mean'], agg['retrieval_accuracy']['lower'], agg['retrieval_accuracy']['upper']):>24} "
               f"{format_ci(agg['routing_accuracy']['mean'], agg['routing_accuracy']['lower'], agg['routing_accuracy']['upper']):>24} "
               f"{format_ci(agg['silent_failure_rate']['mean'], agg['silent_failure_rate']['lower'], agg['silent_failure_rate']['upper']):>24} "

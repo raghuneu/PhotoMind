@@ -29,13 +29,7 @@ class FeedbackStore:
         self.data = self._load()
 
     def _load(self) -> dict:
-        if os.path.exists(self.path):
-            try:
-                with open(self.path) as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
-        return {
+        default = {
             "history": [],
             "strategy_stats": {
                 "factual": {"correct": 0, "total": 0},
@@ -48,29 +42,23 @@ class FeedbackStore:
                 "behavioral": 0.0,
             },
         }
+        if os.path.exists(self.path):
+            try:
+                with open(self.path) as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and "history" in data:
+                    return data
+            except (json.JSONDecodeError, OSError):
+                pass
+        return default
 
     def _save(self):
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         with open(self.path, "w") as f:
             json.dump(self.data, f, indent=2)
 
-    def record_outcome(
-        self,
-        query: str,
-        query_type: str,
-        correct: bool,
-        confidence_score: float,
-    ):
-        """Record a query outcome for feedback learning."""
-        self.data["history"].append({
-            "query": query,
-            "query_type": query_type,
-            "correct": correct,
-            "confidence_score": confidence_score,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-
-        # Update per-strategy accuracy stats
+    def _update_stats(self, query_type: str, correct: bool):
+        """Update per-strategy accuracy stats and confidence adjustments."""
         if query_type not in self.data["strategy_stats"]:
             self.data["strategy_stats"][query_type] = {"correct": 0, "total": 0}
         stats = self.data["strategy_stats"][query_type]
@@ -88,6 +76,23 @@ class FeedbackStore:
             else:
                 self.data["confidence_adjustments"][query_type] = 0.0
 
+    def record_outcome(
+        self,
+        query: str,
+        query_type: str,
+        correct: bool,
+        confidence_score: float,
+    ):
+        """Record a query outcome for feedback learning."""
+        self.data["history"].append({
+            "query": query,
+            "query_type": query_type,
+            "correct": correct,
+            "confidence_score": confidence_score,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        self._update_stats(query_type, correct)
         self._save()
 
     def get_confidence_adjustment(self, query_type: str) -> float:
@@ -131,22 +136,7 @@ class FeedbackStore:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-        if query_type not in self.data["strategy_stats"]:
-            self.data["strategy_stats"][query_type] = {"correct": 0, "total": 0}
-        stats = self.data["strategy_stats"][query_type]
-        stats["total"] += 1
-        if correct:
-            stats["correct"] += 1
-
-        if stats["total"] >= 3:
-            accuracy = stats["correct"] / stats["total"]
-            if accuracy < 0.7:
-                self.data["confidence_adjustments"][query_type] = 0.05
-            elif accuracy >= 0.9:
-                self.data["confidence_adjustments"][query_type] = -0.05
-            else:
-                self.data["confidence_adjustments"][query_type] = 0.0
-
+        self._update_stats(query_type, correct)
         self._save()
 
     def get_summary(self) -> dict:

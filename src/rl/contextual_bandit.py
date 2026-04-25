@@ -30,8 +30,9 @@ class ContextualBandit(ABC):
         """Fit KMeans on the query feature space to define context clusters.
 
         Design choice — k=4 clusters:
-        We evaluated k ∈ {2,3,4,5,6,8} via silhouette score on the 12-dim
-        query feature space (56 queries × 10 augmentation = 560 samples).
+        We evaluated k ∈ {2,3,4,5,6,8} via silhouette score on the 396-dim
+        hybrid query feature space (12 handcrafted + 384 MiniLM embedding
+        dims; 56 queries × 10 augmentation = 560 samples).
         k=4 maximises silhouette (≈0.38) and aligns with a natural
         four-way partition of the query space:
           Cluster 0 — factual-keyword queries  (amount/vendor/date terms)

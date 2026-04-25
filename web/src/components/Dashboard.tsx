@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Paper, Stack, Typography, Box, Skeleton, Chip, Divider,
+  Paper, Stack, Typography, Box, Skeleton, Divider,
   Table, TableHead, TableBody, TableRow, TableCell, TableContainer,
 } from '@mui/material'
 import Grid from '@mui/material/Grid2'
@@ -11,6 +11,13 @@ import {
 import { motion } from 'framer-motion'
 import { fetchJson } from '../lib/api'
 import { NPR } from '../theme'
+import MetricCard from './MetricCard'
+
+type Tone = 'good' | 'warn' | 'bad'
+function tone(good: boolean, invert = false): Tone {
+  if (good) return 'good'
+  return invert ? 'bad' : 'warn'
+}
 
 const CHART_COLORS = [NPR.heliconia, NPR.jayBlue, '#2E7D32', '#ED6C02', '#9C27B0', '#00838F', '#E91E63', '#5E35B1']
 
@@ -90,22 +97,55 @@ export default function Dashboard() {
     return Object.entries(grades).map(([name, value]) => ({ name, value }))
   })()
 
-  const ablationRows: { name: string; retrieval_accuracy?: number; routing_accuracy?: number; silent_failure_rate?: number; decline_accuracy?: number }[] = ablation
+  const ablationRows: {
+    name: string
+    retrieval_accuracy?: number; retrieval_std?: number
+    routing_accuracy?: number; routing_std?: number
+    silent_failure_rate?: number; silent_std?: number
+    decline_accuracy?: number; decline_std?: number
+  }[] = ablation
     ? Object.entries(ablation).map(([name, data]) => {
-        const d = data as { mean?: Record<string, number> }
-        return { name, ...d.mean }
+        const agg =
+          (data as { aggregated?: Record<string, { mean: number; std: number }> }).aggregated ?? {}
+        return {
+          name,
+          retrieval_accuracy: agg.retrieval_accuracy?.mean,
+          retrieval_std: agg.retrieval_accuracy?.std,
+          routing_accuracy: agg.routing_accuracy?.mean,
+          routing_std: agg.routing_accuracy?.std,
+          silent_failure_rate: agg.silent_failure_rate?.mean,
+          silent_std: agg.silent_failure_rate?.std,
+          decline_accuracy: agg.decline_accuracy?.mean,
+          decline_std: agg.decline_accuracy?.std,
+        }
       })
     : []
+
+  // Canonical display order: weakest baseline first, full RL last so the best row stands out.
+  const ABLATION_ORDER = [
+    'Baseline (Rule-Based)',
+    'Epsilon-Greedy',
+    'UCB',
+    'Bandit Only (Thompson)',
+    'DQN Only',
+    'UCB + DQN',
+    'Full (Thompson+DQN)',
+  ]
+  ablationRows.sort((a, b) => {
+    const ia = ABLATION_ORDER.indexOf(a.name)
+    const ib = ABLATION_ORDER.indexOf(b.name)
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
+  })
 
   return (
     <Stack spacing={3}>
       {summary && (
         <Grid container spacing={2}>
-          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Retrieval Accuracy" value={`${(summary.retrieval_accuracy * 100).toFixed(1)}%`} good={summary.retrieval_accuracy >= 0.9} /></Grid>
-          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Routing Accuracy" value={`${(summary.routing_accuracy * 100).toFixed(1)}%`} good={summary.routing_accuracy >= 0.8} /></Grid>
-          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Silent Failure Rate" value={`${(summary.silent_failure_rate * 100).toFixed(1)}%`} good={summary.silent_failure_rate <= 0.05} invert /></Grid>
-          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Decline Accuracy" value={`${(summary.decline_accuracy * 100).toFixed(1)}%`} good={summary.decline_accuracy >= 0.9} /></Grid>
-          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Avg Latency" value={`${summary.avg_latency_s.toFixed(1)}s`} good={summary.avg_latency_s < 30} /></Grid>
+          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Retrieval Accuracy" value={`${(summary.retrieval_accuracy * 100).toFixed(1)}%`} tone={tone(summary.retrieval_accuracy >= 0.9)} chip={summary.retrieval_accuracy >= 0.9 ? 'on target' : 'watch'} /></Grid>
+          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Routing Accuracy" value={`${(summary.routing_accuracy * 100).toFixed(1)}%`} tone={tone(summary.routing_accuracy >= 0.8)} chip={summary.routing_accuracy >= 0.8 ? 'on target' : 'watch'} /></Grid>
+          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Silent Failure Rate" value={`${(summary.silent_failure_rate * 100).toFixed(1)}%`} tone={tone(summary.silent_failure_rate <= 0.05, true)} chip={summary.silent_failure_rate <= 0.05 ? 'low' : 'high'} /></Grid>
+          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Decline Accuracy" value={`${(summary.decline_accuracy * 100).toFixed(1)}%`} tone={tone(summary.decline_accuracy >= 0.9)} chip={summary.decline_accuracy >= 0.9 ? 'on target' : 'watch'} /></Grid>
+          <Grid size={{ xs: 6, md: 2.4 }}><MetricCard label="Avg Latency" value={`${summary.avg_latency_s.toFixed(1)}s`} tone={tone(summary.avg_latency_s < 30)} chip={summary.avg_latency_s < 30 ? 'fast' : 'slow'} /></Grid>
         </Grid>
       )}
 
@@ -165,22 +205,28 @@ export default function Dashboard() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {ablationRows.map((row, i) => (
-                  <TableRow
-                    key={row.name}
-                    component={motion.tr}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    sx={{ '&:hover': { background: NPR.surface } }}
-                  >
-                    <TableCell sx={{ fontFamily: 'ui-monospace, monospace', color: NPR.heliconia }}>{row.name}</TableCell>
-                    <TableCell align="right">{fmtPct(row.retrieval_accuracy)}</TableCell>
-                    <TableCell align="right">{fmtPct(row.routing_accuracy)}</TableCell>
-                    <TableCell align="right">{fmtPct(row.silent_failure_rate)}</TableCell>
-                    <TableCell align="right">{fmtPct(row.decline_accuracy)}</TableCell>
-                  </TableRow>
-                ))}
+                {ablationRows.map((row, i) => {
+                  const isFull = row.name === 'Full (Thompson+DQN)'
+                  return (
+                    <TableRow
+                      key={row.name}
+                      component={motion.tr}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      sx={{
+                        '&:hover': { background: NPR.surface },
+                        ...(isFull && { '& td': { fontWeight: 700, background: NPR.surface } }),
+                      }}
+                    >
+                      <TableCell sx={{ fontFamily: 'ui-monospace, monospace', color: NPR.jayBlue }}>{row.name}</TableCell>
+                      <TableCell align="right">{fmtPctStd(row.retrieval_accuracy, row.retrieval_std)}</TableCell>
+                      <TableCell align="right">{fmtPctStd(row.routing_accuracy, row.routing_std)}</TableCell>
+                      <TableCell align="right">{fmtPctStd(row.silent_failure_rate, row.silent_std)}</TableCell>
+                      <TableCell align="right">{fmtPctStd(row.decline_accuracy, row.decline_std)}</TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </TableContainer>
@@ -215,29 +261,9 @@ export default function Dashboard() {
   )
 }
 
-function MetricCard({ label, value, good, invert }: { label: string; value: string; good: boolean; invert?: boolean }) {
-  const color = invert
-    ? good ? 'success.main' : 'error.main'
-    : good ? 'success.main' : 'warning.main'
-  return (
-    <Paper sx={{ p: 2, borderRadius: 3, height: '100%' }}>
-      <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-        {label}
-      </Typography>
-      <Typography variant="h5" sx={{ fontWeight: 800, color }}>
-        {value}
-      </Typography>
-      <Chip
-        size="small"
-        label={good ? (invert ? 'low ✓' : 'on target ✓') : 'watch'}
-        sx={{ mt: 0.5, height: 20, fontSize: 11, bgcolor: good ? 'transparent' : NPR.surface }}
-        variant="outlined"
-      />
-    </Paper>
-  )
-}
-
-function fmtPct(v: unknown): string {
-  if (typeof v !== 'number') return '—'
-  return `${(v * 100).toFixed(1)}%`
+function fmtPctStd(mean?: number, std?: number): string {
+  if (typeof mean !== 'number') return '—'
+  const m = (mean * 100).toFixed(1)
+  if (typeof std !== 'number') return `${m}%`
+  return `${m}% ± ${(std * 100).toFixed(1)}`
 }

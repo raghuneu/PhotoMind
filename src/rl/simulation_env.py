@@ -199,6 +199,7 @@ class PhotoMindSimulator:
             results=results,
             expected_photo=tc.get("expected_photo"),
             expected_type=tc.get("expected_type", "semantic"),
+            expected_top_entity=tc.get("expected_top_entity"),
         )
 
         info = {

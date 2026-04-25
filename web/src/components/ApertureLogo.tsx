@@ -2,53 +2,84 @@ import { Box } from '@mui/material'
 import { NPR } from '../theme'
 
 /**
- * Animated camera aperture logo — PhotoMind's signature mark.
- * Six Heliconia blades rotate subtly, Jay Blue inner iris pulses.
- * CSS-only animation, no runtime cost.
+ * PhotoMind signature mark — a Polaroid with a pulsing "mind" node.
+ * The Jay Blue window is the image; the Heliconia node is the system
+ * looking at it. Rocks gently like a photo held in hand.
  */
 export default function ApertureLogo({ size = 36 }: { size?: number }) {
-  const blades = Array.from({ length: 6 })
   return (
     <Box
       sx={{
         width: size,
         height: size,
-        position: 'relative',
         display: 'grid',
         placeItems: 'center',
-        borderRadius: '50%',
-        background: NPR.white,
-        border: `2px solid ${NPR.midnight}`,
-        animation: 'aperture-pulse 2.8s ease-in-out infinite',
       }}
     >
       <Box
         component="svg"
-        viewBox="-50 -50 100 100"
+        viewBox="-45 -50 90 100"
         sx={{
-          width: size - 8,
-          height: size - 8,
-          animation: 'spin 18s linear infinite',
-          '@keyframes spin': {
-            from: { transform: 'rotate(0deg)' },
-            to: { transform: 'rotate(360deg)' },
+          width: size,
+          height: size,
+          overflow: 'visible',
+          animation: 'photo-rock 4s ease-in-out infinite',
+          transformOrigin: 'center',
+          '@keyframes photo-rock': {
+            '0%, 100%': { transform: 'rotate(-3deg)' },
+            '50%': { transform: 'rotate(3deg)' },
           },
         }}
       >
-        {blades.map((_, i) => {
-          const angle = (i * 360) / 6
-          return (
-            <polygon
-              key={i}
-              points="0,-34 14,-4 -14,-4"
-              fill={NPR.heliconia}
-              opacity={0.85 - i * 0.04}
-              transform={`rotate(${angle})`}
-            />
-          )
-        })}
-        <circle r="10" fill={NPR.jayBlue} />
-        <circle r="4" fill={NPR.white} />
+        {/* Soft drop shadow */}
+        <rect
+          x="-36"
+          y="-42"
+          width="72"
+          height="86"
+          rx="4"
+          fill="rgba(0,0,15,0.18)"
+          transform="translate(1.8, 2.4)"
+        />
+        {/* Polaroid body */}
+        <rect
+          x="-36"
+          y="-42"
+          width="72"
+          height="86"
+          rx="4"
+          fill={NPR.white}
+          stroke={NPR.midnight}
+          strokeWidth="2"
+        />
+        {/* Image window */}
+        <rect
+          x="-28"
+          y="-34"
+          width="56"
+          height="56"
+          rx="2"
+          fill={NPR.jayBlue}
+        />
+        {/* Pulsing "mind" node */}
+        <Box
+          component="circle"
+          cx="0"
+          cy="-6"
+          r="8"
+          sx={{
+            fill: NPR.heliconia,
+            transformBox: 'fill-box',
+            transformOrigin: 'center',
+            animation: 'node-pulse 1.8s ease-in-out infinite',
+            '@keyframes node-pulse': {
+              '0%, 100%': { opacity: 0.75, transform: 'scale(0.85)' },
+              '50%': { opacity: 1, transform: 'scale(1.15)' },
+            },
+          }}
+        />
+        {/* Catch-light highlight */}
+        <circle cx="-2.5" cy="-8.5" r="1.9" fill={NPR.white} opacity="0.9" />
       </Box>
     </Box>
   )

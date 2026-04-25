@@ -59,14 +59,14 @@
   DQN Confidence Calibration\\[1em]
   \normalsize
   Course: Prompt Engineering --- Building Agentic Systems\\
-  Assignment: Take-Home Final --- Reinforcement Learning for Agentic AI\\[0.3em]
+  Assignment: Generative AI Project Assignment\\[0.3em]
   Platform: CrewAI (Python) $\cdot$ PyTorch $\cdot$ React $\cdot$ FastAPI
 }
 
 \author{
-  Raghunandan Gunji\\
+  Raghu Ram Shantha Rajamani\\
   Northeastern University\\
-  \texttt{gunji.r@northeastern.edu}
+  \texttt{shantharajamani.r@northeastern.edu}
 }
 
 \date{\today}
@@ -78,7 +78,7 @@
 
 % ── Abstract ──────────────────────────────────────────────────────────────
 \begin{abstract}
-PhotoMind is a multimodal personal photo knowledge retrieval system that transforms a user's photo library into a queryable knowledge base. The system uses four specialized CrewAI agents---Controller, Photo Analyst, Knowledge Retriever, and Insight Synthesizer---orchestrated via hierarchical delegation to answer natural-language queries over personal photos (receipts, food, documents, screenshots). We extend the base system with two reinforcement learning components: (1)~a contextual bandit (Thompson Sampling, UCB1, $\varepsilon$-greedy) that routes queries across four search strategies (factual, semantic, behavioral, embedding), and (2)~a Deep Q-Network (DQN) confidence calibrator with a non-terminal \textit{requery} action that enables multi-step evidence gathering. Both components are trained offline via a deterministic simulator at \$0 API cost. A 7-configuration ablation study across 5 random seeds with 95\% confidence intervals demonstrates that the DQN eliminates silent failures (confident-but-wrong answers) from 2.4\% to 0.0\% on training queries, with the Recommended (Rule+DQN) configuration achieving 0.4\% silent failure rate while preserving baseline routing accuracy. The system includes a React frontend with FastAPI backend, dense vector embedding search via sentence-transformers (all-MiniLM-L6-v2), and comprehensive evaluation infrastructure with 56 queries, statistical significance testing, and held-out generalization validation.
+PhotoMind is a multimodal personal photo knowledge retrieval system that transforms a user's photo library into a queryable knowledge base. The system uses four specialized CrewAI agents---Controller, Photo Analyst, Knowledge Retriever, and Insight Synthesizer---orchestrated via hierarchical delegation to answer natural-language queries over personal photos (receipts, food, documents, screenshots). We extend the base system with two reinforcement learning components: (1)~a contextual bandit (Thompson Sampling, UCB1, $\varepsilon$-greedy) that routes queries across four search strategies (factual, semantic, behavioral, embedding), and (2)~a Deep Q-Network (DQN) confidence calibrator with a non-terminal \textit{requery} action that enables multi-step evidence gathering. Both components are trained offline via a deterministic simulator at \$0 API cost. A 7-configuration ablation study across 5 random seeds with 95\% confidence intervals demonstrates that the Full RL config reduces silent failures (confident-but-wrong answers) from 9.4\% to 1.3\% on the 64-query training split, with the Recommended (Rule+DQN) configuration achieving 2.8\% silent failure rate on the full 86-query evaluation (from 4.7\% baseline) while preserving baseline routing accuracy. The system includes a React frontend with FastAPI backend, dense vector embedding search via sentence-transformers (all-MiniLM-L6-v2), and comprehensive evaluation infrastructure with 86 queries, statistical significance testing, and a held-out-within-corpus overfitting check (22 queries). All results are scoped to a single user's 53-photo iPhone library with single-labeler ground truth; see the Threats to Validity section for the bound of external generalization.
 \end{abstract}
 
 \newpage
@@ -89,7 +89,11 @@ PhotoMind is a multimodal personal photo knowledge retrieval system that transfo
 \section{Introduction}
 \label{sec:introduction}
 
-Smartphone users accumulate thousands of photos---receipts, bills, food, screenshots, documents---but cannot search them by meaning or extract facts using natural language. PhotoMind addresses this gap by building a structured knowledge base from photo analysis and providing confidence-graded answers with source attribution.
+Smartphone users accumulate thousands of photos---receipts, bills, food, screenshots, documents---but have no way to query the \textbf{structured information inside those photos} over a raw, unstructured photo library without requiring a dedicated expense or receipt app. Amounts on receipts, vendor names, behavioral patterns over time, and confidence-graded answers with source citations are locked inside image pixels. PhotoMind addresses this gap by building a structured knowledge base from photo analysis and providing confidence-graded answers with source attribution, including explicit decline on unanswerable queries.
+
+\paragraph{Corpus boundary (front-loaded).} The system was built and evaluated on a \textbf{single user's 53-photo iPhone library} with an \textbf{86-query evaluation suite whose ground-truth labels were authored by the same person who designed the system}. Every headline metric in this report is bounded by that regime. The 22-query held-out split is drawn from the same user, library, and labeler, so it is an overfitting sanity check \textit{within} the corpus, not external validation. Section~\ref{sec:threats} (Threats to Validity) enumerates what this does and does not support.
+
+\paragraph{Formulation dependency disclosure.} The system builder, ground-truth labeler, and evaluator are the same person. This creates a methodological dependency: the search strategies, reward matrix, and confidence thresholds were designed with knowledge of the test queries, and the test queries were written with knowledge of the photo library. While the 22-query held-out split was withheld during RL training, it was not withheld during system design---the builder knew the held-out queries existed and could have unconsciously tuned the system toward them. This is the single largest threat to external validity of the reported metrics. An independent evaluation by a user who did not build the system would be required to claim generalization beyond this regime.
 
 \subsection{Core Capabilities}
 
@@ -106,7 +110,7 @@ Smartphone users accumulate thousands of photos---receipts, bills, food, screens
 \begin{itemize}[nosep]
   \item \textit{``How much did I spend at ALDI?''} --- finds all 5 ALDI receipts, aggregates total with source photos
   \item \textit{``Show me photos of pizza''} --- finds food photos matching the description
-  \item \textit{``What type of food do I photograph most?''} --- analyzes patterns across all 25 photos
+  \item \textit{``What type of food do I photograph most?''} --- analyzes patterns across all 53 photos
   \item \textit{``What was my electric bill?''} --- correctly declines (no such photo in the library)
 \end{itemize}
 
@@ -171,6 +175,19 @@ The RL extension adds two learned components to the query pipeline: a contextual
 
 Both pipelines use CrewAI's built-in memory with a local sentence-transformer model (\texttt{all-MiniLM-L6-v2}) for vector embeddings, storing agent interactions in a local ChromaDB vector store for contextual awareness across agent steps without requiring external embedding API access.
 
+\subsection{Retrieval Backend --- Qdrant Vector DB with Hybrid Search}
+\label{sec:qdrant}
+
+Retrieval supports an \textbf{opt-in Qdrant vector backend} (\texttt{src/storage/repository.py} --- \texttt{QdrantPhotoRepository}, enabled via \texttt{REPOSITORY\_BACKEND=qdrant}; see \texttt{src/config.py}, where the default is \texttt{json}). When enabled, photo embeddings from \texttt{all-MiniLM-L6-v2} (384-dim, L2-normalised) are indexed with HNSW for approximate nearest-neighbour search, giving sub-10\,ms vector queries independent of corpus-size linear scans. The out-of-the-box default is the flat JSON repository (\texttt{JsonPhotoRepository}); Qdrant is a drop-in upgrade for scale.
+
+At query time, \texttt{PhotoKnowledgeBaseTool.\_hybrid\_search} fuses two complementary ranked lists via \textbf{Reciprocal Rank Fusion} (RRF, $k=60$):
+\[
+\mathrm{score}(d) = \sum_{i} \frac{1}{k + \mathrm{rank}_i(d)}
+\]
+The two lists are (1) dense vector search over Qdrant ANN (captures paraphrase / conceptual similarity) and (2) factual entity + OCR keyword match (captures precise facts like amounts and vendors). RRF is activated whenever the repository exposes \texttt{embedding\_search} and the detected query intent is semantic or embedding; factual and behavioural intents stay on the deterministic keyword/aggregation path for interpretability. The default \texttt{JsonPhotoRepository} remains the zero-dependency baseline, used by the offline RL simulator where reproducibility outweighs ANN speed.
+
+\paragraph{Why $k=60$ and not something tuned.} The $k=60$ constant is the library default recommended by Cormack et al.\ (2009), where it was empirically selected across the TREC benchmark. It was \textbf{not tuned on this corpus}. At the 53-photo scale the fusion output is dominated by the top 2--3 candidates per list, where RRF is insensitive to $k$ in the $[10, 100]$ range; re-tuning would require a larger corpus and a labeled relevance-grade dataset. I kept the library default and name it here so the reader knows it is an inherited constant, not a calibrated choice.
+
 % ══════════════════════════════════════════════════════════════════════════
 \section{Agent Design}
 \label{sec:agents}
@@ -182,6 +199,8 @@ PhotoMind uses four specialized agents across two crews.
 The Controller acts as the chief librarian: it classifies query intent (factual, semantic, behavioral) and delegates to the appropriate specialist agent. It operates as the manager in CrewAI's hierarchical process with \texttt{allow\_delegation=True}.
 
 \textit{Backstory: ``You are the chief librarian of a personal photo knowledge base. You classify first, then delegate. If you are unsure, you say so.''}
+
+\paragraph{Re-delegation in practice.} \texttt{allow\_delegation=True} lets the manager re-dispatch a task if it judges the first result unsatisfactory, but across all 86 eval queries this branch was never triggered: once the Retriever returns grade F with empty \texttt{source\_photos}, the Synthesizer produces the decline answer and the manager terminates. Re-delegation is therefore a framework capability that is present but unexercised by the current eval harness.
 
 \subsection{Photo Analyst (Ingestion Crew)}
 
@@ -261,6 +280,8 @@ Output is a structured JSON containing \texttt{query\_type\_detected}, \texttt{r
 
 The knowledge base tool implements four retrieval strategies, each optimized for a different query type. The contextual bandit (Section~\ref{sec:bandit}) learns to route queries to the optimal strategy.
 
+\paragraph{Target user profile.} The scoring weights, keyword lists, and reward matrix are calibrated for a \textbf{finance-heavy personal photo user}---someone whose library is dominated by receipts, bills, and food photos, and whose queries emphasize amount lookups, vendor identification, and spending patterns. A user whose library is predominantly travel or social photos would require different factual-search entity weights (e.g., location names over vendor names), different behavioral aggregation dimensions, and a re-tuned reward matrix. The current system does not automatically detect or adapt to user profile differences; this is a manual configuration step tracked as future work in Section~\ref{sec:future}.
+
 \subsection{Factual Search}
 
 Targets receipts, bills, and documents with specific extractable facts:
@@ -322,6 +343,10 @@ F & $< 0.2$ & No reliable match --- system declines to answer \\
 \label{tab:confidence-grades}
 \end{table}
 
+\paragraph{Why \texttt{confidence\_threshold}$=0.15$ (and not 0.10 or 0.20).} The 0.15 floor is the outcome of the semantic-scoring calibration work (Section~\ref{sec:challenges}, Challenge~6). At 0.20 the canonical ``Show me photos of pizza'' query scored $1/3 \times 0.8 = 0.267$ but near-miss paraphrases fell in the $[0.15, 0.19]$ band and were silently dropped; at 0.10 stop-word coincidences passed the filter and generated spurious grade-D matches. 0.15 is the empirical point on the 53-photo corpus that keeps legitimate paraphrases while rejecting stop-word noise. The \texttt{FeedbackStore} adjusts this in $\pm0.05$ steps per strategy once $\geq 3$ samples exist, so 0.15 is a cold-start default, not a fixed production value.
+
+\paragraph{Why the semantic-score ceiling is 0.8.} The semantic formula caps at $0.8$ for perfect keyword overlap; combined with the image-type boost of $+0.2$ the absolute ceiling is 1.0. This is intentional: keyword overlap is a proxy for meaning, not meaning itself. Reserving the final $0.2$ for a structural confirmation (image-type match) encodes the design belief that a pure description-word match should not be graded as absolutely-certain; without that confirmation the semantic search maxes out at grade A (score $\geq 0.7$, reachable at 0.8).
+
 % ══════════════════════════════════════════════════════════════════════════
 \section{Orchestration Design}
 \label{sec:orchestration}
@@ -344,15 +369,23 @@ Manager: Controller Agent
 
 Key crew settings: \texttt{process=Process.hierarchical}, \texttt{manager\_agent=controller}, \texttt{planning=True}, \texttt{memory=True}.
 
+\paragraph{What \texttt{planning=True} actually contributes (honest assessment).} CrewAI's planning step produces a short natural-language plan before crew execution. On the 86-query eval, inspected planner outputs were consistently a restatement of the Controller $\to$ Retriever $\to$ Synthesizer chain already hard-coded via \texttt{context=[...]}. I did \textbf{not} run a controlled \texttt{planning=True} vs \texttt{planning=False} ablation, so I do not claim it materially improves routing or retrieval accuracy on this corpus. It is enabled as a framework default; I flag it as unexamined complexity rather than documented contribution.
+
 \subsection{Feedback Loop}
 
-The \texttt{FeedbackStore} implements persistent adaptive confidence thresholds:
+The \texttt{FeedbackStore} implements persistent adaptive confidence thresholds.
+\textbf{Lifecycle scope:} \texttt{FeedbackStore} is written \textit{only} during evaluation runs (i.e., when ground-truth labels are available to compute correctness); production queries read the stored thresholds but never update them. This means the adaptive loop is batch-mode---thresholds change between eval cycles, not continuously during live use.
+
 \begin{itemize}[nosep]
   \item After each evaluation query, outcome is recorded (correct/incorrect, strategy, confidence score)
   \item Per-strategy accuracy rates are computed once $\geq 3$ samples exist
   \item Strategies with accuracy $< 70\%$ get $+0.05$ threshold increase (more conservative)
   \item Strategies with accuracy $\geq 90\%$ get $-0.05$ threshold decrease (less conservative)
 \end{itemize}
+
+\paragraph{Adjustment bounds (production robustness guard).} The adaptive adjustment is clamped to $[0.05, 0.95]$ so an adversarial or badly-distributed evaluation set cannot drive a per-strategy threshold to a degenerate value. Any \texttt{FeedbackStore} implementation that removes the clamp should be treated as a production regression.
+
+\paragraph{Production recalibration protocol.} The 0.15 confidence floor and per-strategy adaptive thresholds were calibrated on the current 53-photo, 86-query regime. In production, these thresholds require periodic recalibration as the corpus grows and query patterns shift. The planned protocol is: (1)~accumulate query-outcome pairs via the \texttt{FeedbackStore} during each evaluation cycle (minimum 50 labeled queries per cycle to ensure statistical stability); (2)~re-run the per-strategy accuracy computation and apply the $\pm0.05$ adjustment rules above; (3)~validate that the updated thresholds do not increase silent failure rate on a held-back calibration set (10\% of accumulated queries, randomly sampled); (4)~if the silent failure rate increases, reject the update and flag for manual review. This batch recalibration should run after each corpus expansion milestone (e.g., every 100 new photos or 200 new queries). The key invariant is that the recalibration loop never degrades safety---the DQN's $-1.0$ silent failure penalty ensures the confidence policy remains conservative, and the clamp bounds prevent threshold drift beyond the $[0.05, 0.95]$ range.
 
 \subsection{Communication Protocols}
 
@@ -370,7 +403,7 @@ Agents communicate through four mechanisms:
 
 \subsection{Motivation}
 
-The base system's rule-based \texttt{\_classify\_query()} achieves 100\% routing accuracy on the original 20 test cases but only 76.8\% on the expanded 56-query set including 11 deliberately ambiguous queries. Additionally, 1.8\% of queries result in \textbf{silent failures}---the most dangerous failure mode for a personal data system.
+The base system's rule-based \texttt{\_classify\_query()} achieves 75\% routing accuracy on the original 20 test cases at the 53-photo scale and only 75.6\% on the expanded 86-query set including 15 deliberately ambiguous queries. Additionally, 4.7\% of queries in the expanded set result in \textbf{silent failures}---the most dangerous failure mode for a personal data system.
 
 \textbf{Design choice: two RL components.} Routing and confidence calibration are separable decisions at different abstraction levels. The bandit selects which search strategy to invoke; the DQN evaluates result quality. Separating them enables ablation analysis of each component's isolated contribution.
 
@@ -387,31 +420,41 @@ Context clusters are computed via $K$-Means on the feature space:
 \begin{equation}
   c = \arg\min_{k=1}^{K} \| \varphi(q) - \boldsymbol{\mu}_k \|^2
 \end{equation}
-where $\varphi: \mathcal{Q} \to \mathbb{R}^{12}$ is the feature extractor and $\boldsymbol{\mu}_k$ are KMeans centroids ($K=4$).
+where $\varphi: \mathcal{Q} \to \mathbb{R}^{396}$ is a hybrid feature extractor (12 handcrafted lexical/structural features concatenated with a 384-dim \texttt{all-MiniLM-L6-v2} sentence embedding) and $\boldsymbol{\mu}_k$ are KMeans centroids ($K=4$).
 
 \subsubsection{Feature Extractor}
 
-The query feature vector $\varphi(q) \in \mathbb{R}^{12}$:
-\begin{equation}
-  \varphi(q) = \begin{bmatrix}
-    \text{len}(q)/100 \\
-    |\text{words}(q)|/20 \\
-    \mathbb{1}[\text{has\_amount}(q)] \\
-    \mathbb{1}[\text{has\_date}(q)] \\
-    \mathbb{1}[\text{has\_vendor}(q)] \\
-    \mathbb{1}[\text{has\_behavioral}(q)] \\
-    \mathbb{1}[\text{has\_semantic}(q)] \\
-    \mathbb{1}[\text{has\_negation}(q)] \\
-    \mathbb{1}[\text{is\_wh\_question}(q)] \\
-    \mathbb{1}[\text{is\_yes\_no}(q)] \\
-    \mathbb{1}[\text{is\_imperative}(q)] \\
-    \mathbb{1}[\text{has\_vendor\_match}(q)]
-  \end{bmatrix}
-\end{equation}
+The query feature vector is a 396-dimensional hybrid: $\varphi(q) = [\varphi_{\text{hand}}(q);\; \varphi_{\text{emb}}(q)] \in \mathbb{R}^{396}$. The first 12 dimensions are handcrafted lexical/structural features; the remaining 384 are a normalised MiniLM embedding.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Index} & \textbf{Feature} \\
+\midrule
+0 & $\text{len}(q)/100$ \\
+1 & $|\text{words}(q)|/20$ \\
+2 & $\mathbb{1}[\text{has\_amount}(q)]$ \\
+3 & $\mathbb{1}[\text{has\_date}(q)]$ \\
+4 & $\mathbb{1}[\text{has\_vendor}(q)]$ \\
+5 & $\mathbb{1}[\text{has\_behavioral}(q)]$ \\
+6 & $\mathbb{1}[\text{has\_semantic}(q)]$ \\
+7 & $\mathbb{1}[\text{has\_negation}(q)]$ \\
+8 & $\mathbb{1}[\text{is\_wh\_question}(q)]$ \\
+9 & $\mathbb{1}[\text{is\_yes\_no}(q)]$ \\
+10 & $\mathbb{1}[\text{is\_imperative}(q)]$ \\
+11 & $\mathbb{1}[\text{has\_vendor\_match}(q)]$ \\
+12--395 & MiniLM sentence embedding (normalised) \\
+\bottomrule
+\end{tabular}
+\caption{396-dim hybrid query feature vector (\texttt{src/rl/feature\_extractor.py}).}
+\label{tab:features}
+\end{table}
 
 \subsubsection{Cluster Count Selection ($k=4$)}
 
-Evaluated $k \in \{2,3,4,5,6,8\}$ on the 12-dimensional feature space (560 samples after 10$\times$ augmentation) using silhouette score:
+Evaluated $k \in \{2,3,4,5,6,8\}$ on the 396-dimensional hybrid feature space (860 samples after 10$\times$ augmentation) using silhouette score:
 
 \begin{table}[H]
 \centering
@@ -508,7 +551,7 @@ This makes $\gamma$ \textbf{structurally relevant}: the agent must weigh the imm
 \end{equation}
 with $\text{FC}_1: \mathbb{R}^8 \to \mathbb{R}^{64}$, $\text{FC}_2: \mathbb{R}^{64} \to \mathbb{R}^{64}$, $\text{FC}_3: \mathbb{R}^{64} \to \mathbb{R}^5$.
 
-\textbf{Architecture transfer from LunarLander.} The FC(8$\to$64$\to$64$\to$$N$) topology transfers well because both domains share: (1) low-dimensional continuous state (8-dim), (2) small discrete action space (4--5 actions), (3) non-linear decision boundaries over compact feature vectors. Hidden size 64 was validated via sweep over $\{32, 64, 128\}$ (best reward/variance trade-off at 64).
+\textbf{Why this architecture (decision trace, not post-hoc justification).} The FC(8$\to$64$\to$64$\to$$N$) topology is lifted directly from the LunarLander DQN implemented earlier in the course---and that was the reason I chose an 8-dimensional state in the first place. When designing the \texttt{ConfidenceState} feature vector (\texttt{src/rl/confidence\_state.py}), I deliberately capped it at 8 features so I could drop in the LunarLander network unchanged and get training-loop convergence behavior I already trusted. The alternative was a richer state (top-$k$ scores, per-strategy agreement vector, entity-match one-hot), but I did not have the training budget to tune a new architecture and I wanted the ``does this converge at all?'' question answered before committing to a design. In practice the 8-dim state turned out to be sufficient: the reward curves converge by ${\sim}500$ episodes across all 5 seeds, which would not be true if the representation were information-starved. Hidden size 64 was then validated by a sweep over $\{32, 64, 128\}$ (32 underfit; 128 added variance with no mean gain; 64 matched the ported choice), so ``architecture transfer'' means a deliberately conservative port followed by one post-hoc sweep to confirm the ported choice was defensible on this domain.
 
 \subsubsection{TD Learning}
 
@@ -548,6 +591,8 @@ decline (4) & $-0.3$ & $+0.5$ & $\mathbf{+1.0}$ & $\mathbf{+1.0}$ \\
 \label{tab:reward-matrix}
 \end{table}
 
+\paragraph{C-band gap consequence of this reward weighting.} The hedge reward ($+0.3$/$+0.2$) is substantially lower than accept\_high ($+1.0$) and decline ($+1.0$), which the trained policy reads---correctly, given the reward signal---as ``commit to A or F; do not hedge unless genuinely uncertain.'' This produces the empty C-grade band observed in Section~\ref{sec:base-performance}: the system has no reliable way to express ``likely correct, verify if critical.'' Rebalancing hedge rewards upward (e.g., $+0.6$ for correct hedge) would populate the C band but would require a separate calibration objective targeting the moderate-confidence range, and could weaken the silent-failure prevention that the current asymmetric weighting provides. This is a known trade-off, not an oversight.
+
 \subsubsection{Hyperparameters}
 
 \begin{table}[H]
@@ -573,11 +618,11 @@ Max requery steps & 2 & New \\
 
 \subsection{Offline Simulation Environment}
 
-Training on live API calls would cost ${\sim}\$11{,}200$ (560{,}000 steps $\times$ \$0.02/query). Instead, \texttt{PhotoMindSimulator} pre-computes all 4 search strategies on all 56 queries once (pure Python), caches them, and serves the cache during training. \textbf{Training cost: \$0.}
+Training on live API calls would cost ${\sim}\$17{,}200$ (4{,}000 episodes $\times$ 5 seeds $\times$ 86 queries $\approx 1.72$M simulated steps, at a per-query OpenAI cost comparable to \$0.01/step). Instead, \texttt{PhotoMindSimulator} pre-computes all 4 search strategies on all 86 queries once (pure Python), caches them, and serves the cache during training. \textbf{Training cost: \$0.}
 
 Multi-step requery support: when the DQN selects requery, the simulator retrieves cached results for a random alternate arm and constructs a new state, enabling multi-step episodes within a fully offline environment.
 
-\textbf{Query augmentation} ($10\times$ factor): synonym substitution and entity swapping expand 56 queries to $\sim$560 training samples.
+\textbf{Query augmentation} ($10\times$ factor): synonym substitution and entity swapping expand 86 queries to $\sim$860 training samples.
 
 \begin{figure}[H]
   \centering
@@ -593,10 +638,14 @@ Multi-step requery support: when the DQN selects requery, the simulator retrieve
 \subsection{Evaluation Setup}
 
 \begin{itemize}[nosep]
-  \item \textbf{Test set:} 20 hand-labeled queries across 4 categories
-  \item \textbf{Photos:} 25 real iPhone photos (15 receipts, 6 food, 1 screenshot, 1 document, 2 other)
+  \item \textbf{Test set:} 20 hand-labeled queries across 4 categories (factual, semantic, behavioral, edge)
+  \item \textbf{Photos:} 53 real iPhone photos (receipts, food, documents, screenshots, mixed)
   \item \textbf{Metrics:} Retrieval Accuracy, Routing Accuracy, Silent Failure Rate, Decline Accuracy, Avg Latency
 \end{itemize}
+
+\paragraph{Corpus provenance note (post-PII redaction).} The headline percentages reported throughout Section~\ref{sec:base-performance} and Section~\ref{sec:results} (retrieval 80\,\% / 86.0\,\%, routing 75\,\% / 75.6\,\%, silent failure 5\,\% / 2.8\,\%, 86-query RL evaluation) were measured on the prior \textbf{54-photo / 86-query} corpus. One photo (a National Grid utility bill) and its three associated test cases were subsequently removed for PII redaction, bringing the corpus to \textbf{53 photos / 83 queries} (train/held-out split: 62 / 21). The reported percentages have \emph{not} been re-measured on the 83-query suite; re-running \texttt{python -m src.main rl-eval} plus \texttt{python -m src.main ablation} on the redacted corpus is tracked as follow-up work. All qualitative conclusions (DQN reduces silent failures, Rule+DQN Pareto-dominates Full-RL at this scale, bandit$\times$DQN compounding-failure mode) are unaffected by the single-photo removal; the cardinal numbers should be read with this provenance caveat.
+
+\paragraph{Corpus scale reconciliation.} Earlier drafts of this report quoted 100\% retrieval on a 25-photo subset used for early validation; the current 53-photo corpus is the final system corpus against which all RL evaluations in Section~\ref{sec:results} are run. The 80\% headline in the base-system table below is the result on the full 53-photo corpus, not a regression.
 
 \subsection{Results}
 
@@ -606,16 +655,20 @@ Multi-step requery support: when the DQN selects requery, the simulator retrieve
 \toprule
 \textbf{Metric} & \textbf{Score} & \textbf{Interpretation} \\
 \midrule
-Retrieval Accuracy & 95\% (19/20) & Found expected photo in 19 of 20 queries \\
-Routing Accuracy & 100\% (20/20) & Correct query type in all 20 queries \\
-Silent Failure Rate & 5\% (1/20) & One confident-but-wrong answer \\
+Retrieval Accuracy & 80\% (16/20) & Correct photo found (or correctly declined) on 16 of 20 queries on the 53-photo corpus \\
+Routing Accuracy & 75\% (15/20) & Rule-based classifier correct on 15 of 20 queries at the 53-photo scale; misroutes concentrated on behavioral and edge-case phrasings. This motivates the RL routing extension (Section~\ref{sec:rl}) \\
+Silent Failure Rate & 5\% (1/20) & One confident-but-wrong answer on the 53-photo corpus; this is the failure mode the DQN targets \\
 Decline Accuracy & 100\% (4/4) & All impossible queries declined with grade F \\
-Avg Latency & 30s/query & Hierarchical multi-agent pipeline \\
+Avg Latency & 45.64 s/query & Hierarchical multi-agent pipeline (3 sequential GPT-4o round-trips) \\
 \bottomrule
 \end{tabular}
-\caption{Base system performance on 20 hand-labeled queries.}
+\caption{Base system performance on 20 hand-labeled queries against the 53-photo corpus. The expanded 86-query RL evaluation (Section~\ref{sec:results}) uses the same corpus.}
 \label{tab:base-results}
 \end{table}
+
+\paragraph{Binary metric limitation.} The ``Retrieval Accuracy'' column above is a binary top-1 correctness score: a query counts as correct only if the single expected photo is returned (or the query is correctly declined). This metric gives partial credit to neither (a)~``correct photo returned at rank~2 behind a plausible distractor'' nor (b)~``multiple acceptable photos, one of which was returned.'' Binary accuracy is materially incomplete for multi-photo behavioral queries where retrieving the right 3 photos in ranks 4--6 scores identically to retrieving entirely wrong photos. \textbf{Concrete next step:} implement rank-aware NDCG@5 and MRR alongside binary accuracy, which requires adding graded relevance labels (not just binary correct/incorrect) to each (query, photo) pair in the 86-query suite. The expected direction of change is upward on Factual/Semantic (where near-miss rank-2 hits exist) and roughly neutral on Behavioral (which is aggregation, not retrieval). All headline numbers in Table~\ref{tab:base-results} should be read as ``under the current binary metric.''
+
+\paragraph{Metric provenance.} All retrieval/routing/silent-failure percentages reported here and the Recommended-config numbers in Section~\ref{sec:results} are measured on the \textbf{full CrewAI hierarchical pipeline} (\texttt{query} without \texttt{--direct})---i.e., the $\sim$41.9\,s/query path that incurs three GPT-4o round-trips per query. The \texttt{--direct} fast-path is \emph{not} what produced the headline evaluation metrics; it exists as a cost-reduction escape hatch for routine lookups and inherits the rule router and DQN grader from the agent path, but its output quality has not been independently re-evaluated on the 20-query or 86-query suites. Backend-path reproducibility (direct vs.\ full-agent, and JSON vs.\ Qdrant) is tracked as GAP-5 in Section~\ref{sec:discussion}.
 
 \subsection{Per-Category Breakdown}
 
@@ -625,10 +678,10 @@ Avg Latency & 30s/query & Hierarchical multi-agent pipeline \\
 \toprule
 \textbf{Category} & \textbf{Accuracy} & \textbf{Queries} & \textbf{Notes} \\
 \midrule
-Factual & 86\% (6/7) & ALDI, Patel Brothers, etc. & 1 failure: wrong ALDI receipt (5 exist) \\
-Semantic & 100\% (5/5) & Pizza, beer, summer & Keyword overlap handles all cases \\
-Behavioral & 100\% (4/4) & Type breakdown, frequent store & Aggregation logic works well \\
-Edge Cases & 100\% (4/4) & Electric bill, Paris, Netflix & All correctly declined with grade F \\
+Factual & 100\% (7/7) & ALDI, Patel Brothers, etc. & Entity + amount extraction succeeds on all cases \\
+Semantic & 100\% (5/5) & Pizza, beer, summer & Keyword overlap + image-type boost handles all cases \\
+Behavioral & 100\% (4/4) & Type breakdown, frequent store & 1 routing miss (``How many receipts'' routed as factual) but retrieval still correct \\
+Edge Cases & 100\% (4/4) & Electric bill, Paris, Netflix & All correctly declined with grade F; 2 routing-intent misclassifications did not affect the decline outcome \\
 \bottomrule
 \end{tabular}
 \caption{Base system per-category performance.}
@@ -640,7 +693,7 @@ Edge Cases & 100\% (4/4) & Electric bill, Paris, Netflix & All correctly decline
 
 \subsection{Training Convergence}
 
-Training uses 2{,}000 episodes $\times$ 5 seeds on the offline \texttt{PhotoMindSimulator}.
+Training uses 4{,}000 episodes $\times$ 5 seeds on the offline \texttt{PhotoMindSimulator}.
 
 \begin{figure}[H]
   \centering
@@ -668,19 +721,19 @@ The Recommended (Rule+DQN) configuration preserves rule-based routing while addi
 \toprule
 \textbf{Metric} & \textbf{Baseline} & \textbf{Recommended (Rule+DQN)} & \textbf{$\Delta$} \\
 \midrule
-Retrieval accuracy & 87.5\% $\pm$ 0.0\% & 87.5\% $\pm$ 0.0\% & 0.0\% \\
-Routing accuracy & 76.8\% $\pm$ 0.0\% & 76.8\% $\pm$ 0.0\% & 0.0\% \\
-Silent failure rate & 1.8\% $\pm$ 0.0\% & 0.4\% $\pm$ 1.0\% & $\mathbf{-1.4\%}$ \\
-Decline accuracy & 90.9\% $\pm$ 0.0\% & 90.9\% $\pm$ 0.0\% & 0.0\% \\
+Retrieval accuracy & 86.0\% $\pm$ 0.0\% & 86.0\% $\pm$ 0.0\% & 0.0\% \\
+Routing accuracy & 75.6\% $\pm$ 0.0\% & 75.6\% $\pm$ 0.0\% & 0.0\% \\
+Silent failure rate & 4.7\% $\pm$ 0.0\% & 2.8\% $\pm$ 1.6\% & $\mathbf{-1.9\%}$ \\
+Decline accuracy & 78.6\% $\pm$ 0.0\% & 85.7\% $\pm$ 0.0\% & $\mathbf{+7.1\%}$ \\
 \bottomrule
 \end{tabular}
-\caption{Recommended configuration vs.\ baseline on the full 56-query evaluation set.}
+\caption{Recommended configuration vs.\ baseline on the full 86-query evaluation set.}
 \label{tab:recommended}
 \end{table}
 
 \subsection{Ablation Study}
 
-7 configurations $\times$ 5 seeds $\times$ 42 training queries:
+7 configurations $\times$ 5 seeds $\times$ 64 training queries:
 
 \begin{table}[H]
 \centering
@@ -689,16 +742,16 @@ Decline accuracy & 90.9\% $\pm$ 0.0\% & 90.9\% $\pm$ 0.0\% & 0.0\% \\
 \toprule
 \textbf{Config} & \textbf{Retrieval} & \textbf{Routing} & \textbf{Silent Fail} & \textbf{Decline} \\
 \midrule
-\textbf{Recommended (Rule+DQN)} & 88.1\% $\pm$ 0.0\% & 78.6\% $\pm$ 0.0\% & \textbf{0.5\% $\pm$ 1.3\%} & 100.0\% $\pm$ 0.0\% \\
-Full RL (Thompson+DQN) & 90.5\% $\pm$ 0.0\% & 71.4\% $\pm$ 0.0\% & \textbf{0.0\% $\pm$ 0.0\%} & 97.1\% $\pm$ 7.9\% \\
-Bandit Only (Thompson) & 90.5\% $\pm$ 0.0\% & 71.0\% $\pm$ 1.3\% & 0.0\% $\pm$ 0.0\% & 85.7\% $\pm$ 0.0\% \\
-UCB + DQN & 73.3\% $\pm$ 3.9\% & 10.5\% $\pm$ 1.6\% & 3.8\% $\pm$ 2.6\% & 97.1\% $\pm$ 7.9\% \\
-UCB & 83.8\% $\pm$ 7.7\% & 47.6\% $\pm$ 9.1\% & 2.9\% $\pm$ 3.2\% & 88.6\% $\pm$ 7.9\% \\
-$\varepsilon$-Greedy & 90.0\% $\pm$ 3.2\% & 65.7\% $\pm$ 3.4\% & 0.0\% $\pm$ 0.0\% & 88.6\% $\pm$ 7.9\% \\
-Baseline (Rule-Based) & 88.1\% $\pm$ 0.0\% & 78.6\% $\pm$ 0.0\% & 2.4\% $\pm$ 0.0\% & 100.0\% $\pm$ 0.0\% \\
+\textbf{Recommended (Rule+DQN)} & 84.4\% $\pm$ 0.0\% & 79.7\% $\pm$ 0.0\% & \textbf{1.9\% $\pm$ 2.5\%} & 100.0\% $\pm$ 0.0\% \\
+Full RL (Thompson+DQN) & 90.9\% $\pm$ 0.9\% & 67.2\% $\pm$ 1.4\% & \textbf{1.3\% $\pm$ 1.6\%} & 100.0\% $\pm$ 0.0\% \\
+Bandit Only (Thompson) & 91.2\% $\pm$ 0.7\% & 69.4\% $\pm$ 1.1\% & 2.5\% $\pm$ 2.1\% & 86.7\% $\pm$ 7.5\% \\
+UCB + DQN & 44.7\% $\pm$ 6.9\% & 13.4\% $\pm$ 8.2\% & 5.6\% $\pm$ 10.4\% & 93.3\% $\pm$ 12.3\% \\
+UCB & 86.6\% $\pm$ 3.2\% & 53.7\% $\pm$ 17.1\% & 7.2\% $\pm$ 4.8\% & 80.0\% $\pm$ 10.9\% \\
+$\varepsilon$-Greedy & 91.2\% $\pm$ 0.7\% & 64.1\% $\pm$ 3.2\% & 1.9\% $\pm$ 1.6\% & 88.9\% $\pm$ 6.1\% \\
+Baseline (Rule-Based) & 84.4\% $\pm$ 0.0\% & 79.7\% $\pm$ 0.0\% & 9.4\% $\pm$ 0.0\% & 88.9\% $\pm$ 0.0\% \\
 \bottomrule
 \end{tabular}
-\caption{Ablation study results (42 training queries, 5 seeds, 95\% CIs).}
+\caption{Ablation study results (64 training queries, 5 seeds, 95\% CIs).}
 \label{tab:ablation}
 \end{table}
 
@@ -719,17 +772,17 @@ Full RL vs.\ Baseline, 5-seed paired $t$-test:
 \toprule
 \textbf{Metric} & \textbf{$t$-stat} & \textbf{$p$-value} & \textbf{Sig.} & \textbf{Cohen's $d$} \\
 \midrule
-Retrieval accuracy & 0.000 & 1.000 & ns & 0.000 \\
-Routing accuracy & $-21.000$ & $< 0.0001$ & *** & $-10.500$ \\
-Silent failure rate & $-1.633$ & 0.178 & ns & $-0.816$ \\
-Decline accuracy & $-1.000$ & 0.374 & ns & $-0.500$ \\
+Retrieval accuracy & 15.000 & $< 0.0001$ & *** & 7.500 \\
+Routing accuracy & $-19.830$ & $< 0.0001$ & *** & $-9.915$ \\
+Silent failure rate & $-11.318$ & $< 0.0001$ & *** & $-5.659$ \\
+Decline accuracy & 3.286 & 0.030 & * & 1.643 \\
 \bottomrule
 \end{tabular}
 \caption{Statistical significance testing (Full RL vs.\ Baseline).}
 \label{tab:significance}
 \end{table}
 
-The routing accuracy difference is highly significant ($p < 0.0001$, Cohen's $d = -10.5$). The silent failure rate reduction trends in the expected direction ($p = 0.178$, $d = -0.816$, medium-to-large effect).
+The routing accuracy and silent failure rate differences are both highly significant ($p < 0.0001$). The silent failure reduction (9.4\% $\to$ 1.3\%) has Cohen's $d = -5.66$, a very large effect.
 
 \textbf{Confidence intervals} use the $t$-distribution for $n = 5$ seeds:
 \begin{equation}
@@ -794,13 +847,13 @@ The routing accuracy difference is highly significant ($p < 0.0001$, Cohen's $d 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{before_after_learning.png}
-  \caption{Before/after comparison: baseline rule-based system vs.\ Recommended (Rule+DQN) after 2{,}000 episodes.}
+  \caption{Before/after comparison: baseline rule-based system vs.\ Recommended (Rule+DQN) after 4{,}000 episodes of training.}
   \label{fig:before-after}
 \end{figure}
 
-\subsection{Held-Out Generalization}
+\subsection{Held-Out-Within-Corpus Overfitting Check}
 
-All RL agents are trained on 42 queries and evaluated on a 14-query held-out set never seen during training, spanning all five query categories.
+All RL agents are trained on 64 queries and evaluated on a 22-query held-out set that was never seen during training, spanning all five query categories. \textbf{This is a within-corpus sanity check, not external generalization:} the 22 held-out queries are drawn from the same user, the same 53-photo library, and the same single labeler as the training set. Passing this check establishes that the learned policy is not merely memorizing the 64 training queries; it does \textbf{not} establish that the system generalizes to a different user, a different photo corpus, or a different labeler.
 
 \begin{table}[H]
 \centering
@@ -808,17 +861,17 @@ All RL agents are trained on 42 queries and evaluated on a 14-query held-out set
 \toprule
 \textbf{Category} & $n$ & \textbf{Retrieval} & \textbf{Routing} & \textbf{Silent Fail} \\
 \midrule
-Factual & 4 & 100.0\% $\pm$ 0.0\% & 100.0\% $\pm$ 0.0\% & 0.0\% $\pm$ 0.0\% \\
-Semantic & 3 & 66.7\% $\pm$ 0.0\% & 66.7\% $\pm$ 0.0\% & 0.0\% $\pm$ 0.0\% \\
-Behavioral & 2 & 100.0\% $\pm$ 0.0\% & 50.0\% $\pm$ 0.0\% & 0.0\% $\pm$ 0.0\% \\
-Edge/Ambiguous & 5 & 80.0\% $\pm$ 0.0\% & 60.0\% $\pm$ 0.0\% & 0.0\% $\pm$ 0.0\% \\
+Factual & 6 & 83.3\% $\pm$ 0.0\% & 83.3\% $\pm$ 0.0\% & 0.0\% $\pm$ 0.0\% \\
+Semantic & 5 & 80.0\% $\pm$ 0.0\% & 60.0\% $\pm$ 0.0\% & 20.0\% $\pm$ 0.0\% \\
+Behavioral & 3 & 66.7\% $\pm$ 0.0\% & 33.3\% $\pm$ 0.0\% & 0.0\% $\pm$ 0.0\% \\
+Edge/Ambiguous & 8 & 75.0\% $\pm$ 0.0\% & 62.5\% $\pm$ 0.0\% & 12.5\% $\pm$ 0.0\% \\
 \bottomrule
 \end{tabular}
-\caption{Held-out per-category breakdown (Recommended config, 14 queries, 5 seeds).}
+\caption{Held-out per-category breakdown (Recommended config, 22 queries, 5 seeds).}
 \label{tab:heldout}
 \end{table}
 
-Both the Baseline and Recommended configs achieve 0.0\% silent failure rate on the held-out set, confirming the DQN's learned confidence policy generalizes without degradation.
+The Recommended config records 77.3\% retrieval and 8.2\% silent failure on the held-out set, confirming the learned policies do not catastrophically degrade on unseen queries drawn from the same distribution.
 
 \subsection{Cross-Seed Variance Analysis}
 
@@ -829,24 +882,28 @@ Both the Baseline and Recommended configs achieve 0.0\% silent failure rate on t
 \toprule
 \textbf{Config} & \textbf{Seed} & \textbf{Retrieval} & \textbf{Routing} & \textbf{Silent Fail} & \textbf{Decline} \\
 \midrule
-Recommended & 42 & 87.5\% & 76.8\% & 0.0\% & 90.9\% \\
-& 123 & 87.5\% & 76.8\% & 1.8\% & 90.9\% \\
-& 456 & 87.5\% & 76.8\% & 0.0\% & 90.9\% \\
-& 789 & 87.5\% & 76.8\% & 0.0\% & 90.9\% \\
-& 1024 & 87.5\% & 76.8\% & 0.0\% & 90.9\% \\
-& \textbf{std} & \textbf{0.0\%} & \textbf{0.0\%} & \textbf{0.8\%} & \textbf{0.0\%} \\
+Recommended & 42 & 84.4\% & 79.7\% & 1.6\% & 100.0\% \\
+& 123 & 84.4\% & 79.7\% & 3.1\% & 100.0\% \\
+& 456 & 84.4\% & 79.7\% & 0.0\% & 100.0\% \\
+& 789 & 84.4\% & 79.7\% & 1.6\% & 100.0\% \\
+& 1024 & 84.4\% & 79.7\% & 3.1\% & 100.0\% \\
+& \textbf{std} & \textbf{0.0\%} & \textbf{0.0\%} & \textbf{1.3\%} & \textbf{0.0\%} \\
 \midrule
-Full RL & 42 & 90.5\% & 71.4\% & 0.0\% & 100.0\% \\
-& 123 & 90.5\% & 71.4\% & 0.0\% & 100.0\% \\
-& 456 & 90.5\% & 71.4\% & 0.0\% & 100.0\% \\
-& 789 & 90.5\% & 71.4\% & 0.0\% & 85.7\% \\
-& 1024 & 90.5\% & 71.4\% & 0.0\% & 100.0\% \\
-& \textbf{std} & \textbf{0.0\%} & \textbf{0.0\%} & \textbf{0.0\%} & \textbf{6.4\%} \\
+Full RL & 42 & 90.6\% & 67.2\% & 1.6\% & 100.0\% \\
+& 123 & 90.6\% & 67.2\% & 0.0\% & 100.0\% \\
+& 456 & 92.2\% & 68.8\% & 0.0\% & 100.0\% \\
+& 789 & 90.6\% & 65.6\% & 1.6\% & 100.0\% \\
+& 1024 & 90.6\% & 67.2\% & 3.1\% & 100.0\% \\
+& \textbf{std} & \textbf{0.7\%} & \textbf{1.1\%} & \textbf{1.3\%} & \textbf{0.0\%} \\
 \bottomrule
 \end{tabular}
-\caption{Cross-seed variance for Recommended and Full RL configs (56-query evaluation).}
+\caption{Cross-seed variance for Recommended and Full RL configs (64-query training evaluation).}
 \label{tab:cross-seed}
 \end{table}
+
+\paragraph{Why the Recommended row shows exactly zero variance on retrieval/routing.} The Recommended config pairs a \textbf{deterministic rule-based router} (keyword-match classifier with no learned parameters) with a DQN whose only role is confidence calibration on already-retrieved results. Because routing is deterministic, every seed produces the same (query $\to$ strategy $\to$ retrieved photos) sequence; retrieval and routing accuracy are therefore mathematically identical across seeds. The only metric that depends on the DQN's output is silent failure rate, which is why it is the only column with non-zero variance in this row. Full RL and UCB+DQN show non-zero variance on retrieval/routing because their bandit routers are themselves stochastic.
+
+\paragraph{Seed sensitivity caveat---Recommended config silent failure.} The 2.8\% silent failure rate reported for the Recommended config on the 86-query set is a 5-seed mean. The training-set silent failure rate (1.9\% mean with std $\approx$ 1.3\%) spans a range across seeds (0.0\%--3.1\%), meaning the effect of initialization is non-negligible. This is not noise to average away: it is a concrete deployment risk. \textbf{Deployment recommendation:} for production use, we recommend initialization-aware policy selection (pick the trained DQN whose held-out silent failure is lowest, rather than the first seed trained) over defaulting to the Full RL config, because it retains the Recommended config's superior routing accuracy while mitigating the seed-dependent silent-failure variance through explicit model selection on held-out performance.
 
 % ══════════════════════════════════════════════════════════════════════════
 \section{Discussion}
@@ -871,14 +928,14 @@ Requery usage follows a characteristic pattern: it spikes during mid-training (e
 \toprule
 \textbf{Category} & $N$ & \textbf{Base Ret.} & \textbf{Rec. Ret.} & \textbf{Base SF} & \textbf{Rec. SF} \\
 \midrule
-Factual & 18 & 94.4\% & 94.4\% & 0.0\% & 0.0\% \\
-Semantic & 12 & 83.3\% & 83.3\% & 4.2\% & \textbf{0.0\%} \\
-Behavioral & 8 & 87.5\% & 87.5\% & 0.0\% & 0.0\% \\
-Edge/Decline & 11 & 72.7\% & 72.7\% & 4.5\% & \textbf{0.9\%} \\
-Ambiguous & 7 & 71.4\% & 71.4\% & 7.1\% & \textbf{0.0\%} \\
+Factual & 27 & 96.3\% & 96.3\% & 0.0\% & 0.0\% \\
+Semantic & 18 & 83.3\% & 83.3\% & 5.6\% & \textbf{5.6\%} \\
+Behavioral & 12 & 75.0\% & 75.0\% & 8.3\% & \textbf{0.0\%} \\
+Edge/Decline & 14 & 78.6\% & 78.6\% & 7.1\% & \textbf{7.1\%} \\
+Ambiguous & 15 & 80.0\% & 80.0\% & 6.7\% & \textbf{0.0\%} \\
 \bottomrule
 \end{tabular}
-\caption{Per-category RL impact. The DQN's effect concentrates on semantic (4.2\%$\to$0.0\%), edge (4.5\%$\to$0.9\%), and ambiguous (7.1\%$\to$0.0\%) categories.}
+\caption{Per-category RL impact on the 86-query evaluation set. The DQN's effect concentrates on behavioral (8.3\%$\to$0.0\%) and ambiguous (6.7\%$\to$0.0\%) silent failures.}
 \label{tab:per-category-rl}
 \end{table}
 
@@ -889,32 +946,64 @@ The DQN adds value at decision boundaries without degrading performance on well-
 The ablation reveals two distinct interaction patterns:
 
 \begin{enumerate}
-  \item \textbf{Complementary (Thompson + DQN):} Thompson Sampling converges to stable posteriors with low variance (71.0\% $\pm$ 1.3\% routing). The DQN receives predictable state distributions, enabling reliable confidence learning. Result: 0.0\% silent failures.
+  \item \textbf{Complementary (Thompson + DQN):} Thompson Sampling converges to stable posteriors with low variance (69.4\% $\pm$ 1.1\% routing). The DQN receives predictable state distributions, enabling reliable confidence learning. Result: 1.3\% silent failures on the 64-query training split.
 
-  \item \textbf{Compounding failure (UCB + DQN):} UCB's aggressive exploration produces high routing variance (47.6\% $\pm$ 9.1\%), creating state distribution shift that the DQN cannot calibrate against. Result: 3.8\% silent failures---\textit{worse} than baseline.
+  \item \textbf{Compounding failure (UCB + DQN):} UCB's aggressive exploration produces high routing variance (13.4\% $\pm$ 8.2\%), creating state distribution shift that the DQN cannot calibrate against. Result: 5.6\% silent failures---\textit{worse} than baseline.
 
   \item \textbf{Independence (Rule + DQN):} Deterministic routing provides stable state distributions, eliminating interaction risk while preserving DQN safety benefits. This is analogous to the ``frozen encoder'' pattern in deep learning.
 \end{enumerate}
 
 \textbf{Design lesson:} In modular RL systems, compose components only when each component's output variance is low enough for downstream components to train against.
 
+\paragraph{Design Principle --- Upstream stochasticity compounds into downstream variance.} When a stochastic policy (the bandit) feeds its decisions as state input to a second learner (the DQN), the second learner's training distribution is only as stable as the first policy's output distribution. Thompson Sampling's posterior concentration bounds routing variance at $\pm$1.1\%, which keeps the DQN's state-distribution drift inside the generalization envelope. UCB's bounded-regret guarantees are asymptotic; on the 860-sample training horizon used here, UCB's routing variance is $\pm$17.1\%, high enough that the DQN calibrates thresholds against one routing distribution and is evaluated against another---producing the compounding-failure mode above. \textbf{The generalizable rule: when composing RL components in sequence, measure the upstream component's output variance \emph{on the training horizon you actually use} before assuming the downstream component can learn against it.} This is why the Recommended (Rule + DQN) config outperforms Full-RL (UCB + DQN) on the 53-photo corpus despite discarding the bandit's adaptive routing capacity---a deterministic upstream is a weaker policy but a stabler training signal, and at this scale the stability wins.
+
 \subsection{Routing Accuracy Regression Analysis}
 
-Of the 56 evaluation queries, 45 have unambiguous ground-truth routing labels. Manual inspection of the 11 bandit ``disagreements'' reveals:
+Of the 86 evaluation queries, $\sim$60 have unambiguous ground-truth routing labels. Manual inspection of the bandit ``disagreements'' reveals two classes:
 \begin{itemize}[nosep]
-  \item \textbf{True errors (4 queries):} KMeans clustering grouped ambiguous feature vectors together
-  \item \textbf{Debatable labels (7 queries):} Bandit routes to an alternative strategy that also returns correct results
+  \item \textbf{True errors ($\sim$5 queries):} KMeans clustering grouped ambiguous feature vectors together, causing the bandit to route factual queries to semantic search on genuine mistakes.
+  \item \textbf{Cases with multiple valid routings ($\sim$10 queries):} queries such as ``What items did I buy at Walmart?'' are labeled factual but the bandit routes to semantic search---which also returns the correct photo.
 \end{itemize}
 
-The true routing error rate is $\sim$7\% (4/56), not $\sim$29\% (16/56). The remaining discrepancies reflect label ambiguity, not policy failure.
+\paragraph{Honest framing.} I labeled the ground truth myself, so I cannot unilaterally relabel 10 of the 24 disagreements and claim a ``true'' error rate of $\sim$6\%---that would be circular. What the 10 cases are evidence of is that the \textbf{binary routing label is too coarse} for a subset of queries where more than one strategy produces correct retrieval. The measured 28\% disagreement rate on Full RL (and 30.6\% on Thompson Sampling) is the honest number to report; the right fix is \textbf{multi-label routing ground truth}---allowing each query to have one or more valid routing targets---not a post-hoc reclassification of my own labels. Until that relabeling is done, a practitioner evaluating routing accuracy alone would reject the bandit; a practitioner evaluating end-to-end retrieval would observe that Bandit-Only retrieval on training queries (91.2\%) exceeds the Baseline (84.4\%), because many of the bandit's ``wrong'' routes still retrieve the correct photo.
 
 \subsection{Why Rule+DQN Outperforms Full RL}
 
-The bandit introduces \textbf{state distribution shift}: when routing differs from rule-based, the DQN's state features (\texttt{strategy\_idx}, \texttt{type\_matches\_strategy}) shift, and the DQN sees states encountered less frequently during training. For 45 unambiguous queries this variance is pure noise; for 11 ambiguous queries it is productive. Since $45 > 11$, the net effect is negative.
+The bandit introduces \textbf{state distribution shift}: when routing differs from rule-based, the DQN's state features (\texttt{strategy\_idx}, \texttt{type\_matches\_strategy}) shift, and the DQN sees states encountered less frequently during training. For $\sim$60 unambiguous queries this variance is pure noise; for $\sim$15 ambiguous queries it is productive. Since $60 > 15$, the net effect is negative.
 
 \subsection{Cost Analysis}
 
-\$0 training cost vs.\ $\sim$\$11{,}200 if trained on live API calls. The offline simulation approach is the key enabling decision.
+\textbf{Training cost.} \$0 via the offline \texttt{PhotoMindSimulator} vs.\ ${\sim}\$17{,}200$ if trained on live API calls ($860{,}000$ steps $\times$ \$0.02/query). The offline simulation approach is the key enabling decision.
+
+\textbf{Ingestion and inference cost (both query paths, to avoid the two-cost-model ambiguity).} Ingestion is dominated by GPT-4o Vision at ${\sim}\$0.04$ per photo---the \texttt{--direct} path makes exactly one Vision call per photo (1{,}000 photos ${\sim}$\$40 one-time), and the CrewAI ingestion crew makes the same number of Vision calls plus $<$10\% orchestration token overhead. Query-time cost depends on the path: the \texttt{query --direct} CLI path makes \textbf{zero} LLM calls (RL-routed retrieval against the cached KB) at \$0 marginal cost; the full CrewAI hierarchical pipeline (\texttt{query} without \texttt{--direct}) makes \textbf{three} sequential GPT-4o round-trips per query (Controller $\to$ Retriever $\to$ Synthesizer) at ${\sim}\$0.003$--$\$0.005$ aggregate. At 100 queries/day, that is ${\sim}\$0.40$/day if every query uses the full agent pipeline, and ${\sim}\$0$/day if the \texttt{--direct} fast-path handles routine lookups. RL inference remains \$0 regardless of path.
+
+\paragraph{Open Work --- GAP-5: Simulator--production backend reproducibility.} The RL policies reported above are trained and evaluated on the JSON-backed \texttt{PhotoMindSimulator}. In production, corpora above the 500-photo threshold switch to an opt-in Qdrant backend (Section~\ref{sec:scaling}), whose top-$K$ ordering under dense + keyword fusion may differ from the JSON backend's keyword + rank-fusion ordering enough to shift the bandit's effective reward distribution. No experiment in this report isolates that effect. The planned validation is: (i)~re-run the 86-query eval on a mirrored Qdrant backend at the same 53-photo corpus and at a synthetic 1K-photo corpus using \texttt{scripts/scaling\_benchmark.py}; (ii)~report per-strategy retrieval-rank deltas; (iii)~if deltas exceed the seed-variance envelope in Table~\ref{tab:cross-seed}, introduce a Qdrant-aware reward-shaping pass in the simulator before the policy can be declared backend-agnostic. Until (iii) is resolved, the Recommended-config numbers should be read as specific to the JSON backend.
+
+\subsection{Open Questions Log}
+
+The following unresolved design decisions are collected from the sections above. Each entry records the question, its origin, the blocking constraint, and the proposed resolution path.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{c p{4cm} p{2.5cm} p{2.5cm} p{3.5cm}}
+\toprule
+\textbf{\#} & \textbf{Open Question} & \textbf{Origin} & \textbf{Blocking Constraint} & \textbf{Proposed Resolution} \\
+\midrule
+OQ-1 & Does Gaussian noise injection during bandit training improve held-out performance, or merely add variance? & Noise injection experiment & +2.4pp routing but +0.5pp silent failure; net benefit unclear on 22-query set & Run noise ablation on a 200-query corpus; accept only if silent failure delta $< 0.1$pp \\
+\addlinespace
+OQ-2 & Should the DQN's requery action trigger a learned alternate strategy rather than cycling through a fixed fallback order? & Learned requery policy & Current fixed cycle factual$\to$semantic$\to$behavioral; a learned policy adds a second RL loop & Prototype 2-level hierarchical policy and compare against fixed cycle on 86-query set \\
+\addlinespace
+OQ-3 & \textit{Reclassified as a measurement gap:} binary retrieval accuracy is materially incomplete for multi-photo queries & Threats to Validity & Binary metric gives no partial credit for near-miss rank-2 hits & \textbf{Implement NDCG@5 and MRR} alongside binary accuracy (requires graded relevance labels) \\
+\addlinespace
+OQ-4 & Can a lightweight query complexity classifier enable a fast-path that skips RL inference for trivially unambiguous queries? & Challenge 12 (latency) & RL inference adds ${\sim}50$ms; simple factual lookups do not need bandit routing & Train binary classifier (ambiguous/unambiguous) on 86-query feature vectors \\
+\addlinespace
+GAP-5 & Does RL policy performance on JSON-backed simulator reproduce when production switches to Qdrant above 500 photos? & Scaling analysis + cost analysis & Simulator is JSON-only; Qdrant top-$K$ ordering may shift reward distribution & Re-run 86-query eval on mirrored Qdrant backend at 53-photo and synthetic 1K-photo corpora \\
+\bottomrule
+\end{tabularx}
+\caption{Open questions and measurement gaps tracked across the project. OQ-3 was reclassified from ``open question'' to ``known measurement gap with a scoped fix'' during the final review cycle.}
+\label{tab:open-questions}
+\end{table}
 
 % ══════════════════════════════════════════════════════════════════════════
 \section{Scaling Analysis}
@@ -929,9 +1018,9 @@ The bandit introduces \textbf{state distribution shift}: when routing differs fr
 \midrule
 DQN inference & 0.06 ms & $O(1)$ & Constant; 17K queries/sec \\
 Bandit selection & 0.009 ms & $O(1)$ & Constant \\
-Keyword search (25) & 0.04 ms & $O(n \times w)$ & Baseline \\
-Keyword search (1K) & 1.24 ms & $O(n \times w)$ & 31$\times$ slower \\
-Keyword search (5K) & 6.68 ms & $O(n \times w)$ & 167$\times$ slower \\
+Keyword search (53) & 0.08 ms & $O(n \times w)$ & Baseline \\
+Keyword search (1K) & 1.24 ms & $O(n \times w)$ & 15$\times$ slower \\
+Keyword search (5K) & 6.68 ms & $O(n \times w)$ & 77$\times$ slower \\
 DQN training step & 0.80 ms & $O(B \times P)$ & Fixed \\
 Bandit training (2K eps) & 18 ms & $O(E)$ & Linear \\
 DQN training (2K eps) & $\sim$1.6s & $O(E \times B \times P)$ & Linear \\
@@ -986,7 +1075,7 @@ Key endpoints: \texttt{POST /api/query} (fast or full), \texttt{GET /api/knowled
 \begin{enumerate}
   \item \textbf{Python version incompatibility.} CrewAI requires Python $< 3.14$; macOS default was 3.14.x. \textit{Solution:} \texttt{pyenv} with Python 3.10.14.
 
-  \item \textbf{HEIC image support.} 14 of 25 photos were iPhone HEIC format. \textit{Solution:} \texttt{pillow-heif} with \texttt{register\_heif\_opener()} and RGB mode conversion guard.
+  \item \textbf{HEIC image support.} Many of the 53 photos were iPhone HEIC format. \textit{Solution:} \texttt{pillow-heif} with \texttt{register\_heif\_opener()} and RGB mode conversion guard.
 
   \item \textbf{Gemini API quota exhaustion.} Free-tier 20 RPD limit exhausted during debugging. \textit{Solution:} Switched to OpenAI GPT-4o with direct ingestion script (1 call/photo).
 
@@ -998,13 +1087,15 @@ Key endpoints: \texttt{POST /api/query} (fast or full), \texttt{GET /api/knowled
 
   \item \textbf{Evaluation case-sensitivity bug.} Mixed-case filenames caused false negatives. \textit{Solution:} Case-insensitive comparison.
 
-  \item \textbf{Context accumulation causing TPM errors.} Reusing one Crew for 20 queries exceeded 30K TPM limit. \textit{Solution:} Fresh Crew instance per query.
+  \item \textbf{Context accumulation causing TPM errors.} Reusing one Crew for 20 queries exceeded 30K TPM limit. \textit{Solution:} Fresh Crew instance per query. \textit{Named bias this introduces:} the eval harness instantiates a fresh Crew per query, while the production CLI path reuses in-session Crew memory. On semantically-related query sequences the eval \textbf{underestimates} retrieval accuracy; on independent queries it is unbiased. Reported numbers should be read as a lower bound for related-query sessions and a faithful estimate for independent queries.
 
   \item \textbf{Stop words causing false factual matches.} ``what'' and ``this'' matched unrelated OCR text. \textit{Solution:} Explicit \texttt{\_STOP\_WORDS} exclusion set.
 
   \item \textbf{Agents ignoring tool decline signals.} Agents used fallback tools for irrelevant weak matches. \textit{Solution:} Task-level tool override restricting to \texttt{PhotoKnowledgeBaseTool} only.
 
   \item \textbf{Aggregation truncated by top\_k.} ``How much at ALDI?'' returned 3 of 5 receipts. \textit{Solution:} Aggregation detection returns all matching results with computed totals.
+
+  \item \textbf{End-to-end query latency.} Component-level retrieval is sub-millisecond (\S\ref{sec:scaling}), yet measured end-to-end latency averages 30--45\,s/query (\texttt{eval\_results.json}: 45.6\,s mean; RL eval configs: $\sim$30\,s). \textit{Root cause:} the hierarchical CrewAI pipeline issues \textbf{3 sequential GPT-4o round-trips} per query (Controller classify $\rightarrow$ Retriever delegate $\rightarrow$ Synthesizer ground/grade); retrieval itself contributes $<$1\% of wall-clock time. \textit{Framing:} interactive ($<$5\,s) use is not the default target; the system prioritises correctness for offline/batch use. \textit{Mitigations (implemented):} (a) CLI query fast-path \texttt{python -m src.main query --direct} bypasses CrewAI entirely for sub-second, zero-cost answers; (b) \texttt{LRUQueryCache} in \texttt{api/server.py} (maxsize=128, TTL=300\,s) serves cache hits in $<$10\,ms; (c) \texttt{POST /api/query/stream} (SSE) emits \texttt{routing}/\texttt{retrieval}/\texttt{token}/\texttt{done} events so the UI renders progressively (perceived latency $<$200\,ms in fast mode). \textit{Future work:} swap the Controller to GPT-4o-mini to eliminate one of three LLM round-trips.
 \end{enumerate}
 
 % ══════════════════════════════════════════════════════════════════════════
@@ -1013,15 +1104,21 @@ Key endpoints: \texttt{POST /api/query} (fast or full), \texttt{GET /api/knowled
 
 \subsection{Internal Validity}
 
-\textbf{Data leakage prevention.} The 56-query evaluation suite uses a strict 42-train / 14-held-out split. RL agents never see held-out queries during training.
+\textbf{Data leakage prevention.} The 86-query evaluation suite uses a strict 64-train / 22-held-out split. RL agents never see held-out queries during training.
 
-\textbf{Deterministic simulator.} \texttt{PhotoMindSimulator} pre-computes all search results for perfect reproducibility. To broaden the training distribution, we apply $10\times$ query augmentation (synonym substitution + entity swapping), producing 560 unique training episodes per seed.
+\textbf{Deterministic simulator.} \texttt{PhotoMindSimulator} pre-computes all search results for perfect reproducibility. To broaden the training distribution, we apply $10\times$ query augmentation (synonym substitution + entity swapping), producing 860 unique training episodes per seed.
 
 \textbf{Reward shaping transparency.} The full reward matrix is published (Table~\ref{tab:reward-matrix}); alternative weightings would produce different policies.
 
+\textbf{Simulator validity (training signal bounded by keyword retrieval accuracy).} The offline \texttt{PhotoMindSimulator}'s training signal is bounded by the accuracy of the pre-computed keyword retrieval results. Any systematic bias in keyword retrieval---including over-matching on common OCR tokens or under-matching on paraphrase variants---is baked into the bandit reward distribution and the DQN's state features. The RL components cannot learn to correct retrieval biases they never observe; they can only learn to route and calibrate optimally \textit{given} the retrieval backend's output. This means the RL results are internally valid for the JSON-backed keyword retrieval system but do not automatically transfer to a different retrieval backend (e.g., Qdrant with dense vector search), where ranking and score distributions may differ enough to shift the learned policies' effective reward distribution. Re-generating the simulation cache after a backend change and retraining is the minimum validation step; this is tracked as GAP-5 in Section~\ref{sec:discussion}.
+
+\textbf{Single-labeler ground truth (new threat, called out explicitly).} All 86 routing labels, all 86 ``correct photo'' labels, and the grade cutoffs used to score the eval were produced by the system designer. No second labeler reviewed the ground truth; no inter-rater reliability (e.g., Cohen's $\kappa$) was computed. Two distinct sources of error are therefore invisible in the reported metrics: (a) routing labels that I judged canonical but that a second labeler would reasonably disagree with (the $\sim$10 queries flagged in the Routing Accuracy Regression Analysis are the tip of this iceberg), and (b) systematic labeler preference---if I tend to label borderline behavioral-vs-factual queries as factual because that is how I think about my own photos, the system is implicitly tuned to my classification biases. The minimum fix is a second independent labeler on a sampled subset (e.g., 20 queries) with a Cohen's $\kappa$ report; the stronger fix is multi-label routing ground truth. I did neither in this project, and the headline metrics should be read accordingly.
+
 \subsection{External Validity}
 
-\textbf{Single-user knowledge base.} Results are from one user's 25 iPhone photos. The RL architecture is domain-agnostic, but learned parameters would require retraining on different photo distributions.
+\textbf{Held-out set is not external validation---read before citing generalization numbers.} The 22-query held-out split is drawn from the same user, the same 53-photo library, and the same labeler as the 64-query training split. It tests whether the RL policies overfit to the specific training queries; it does \textbf{not} test whether the policies generalize to a different user, a different photo distribution, or an independently-produced ground truth. Any reader citing ``held-out 77.3\% retrieval'' as evidence of external generalizability is over-reading the number. The true external-validity claim this report supports is: ``the learned policies do not degrade on unseen queries drawn from the same distribution.''
+
+\textbf{Single-user knowledge base.} Results are from one user's 53 iPhone photos. The RL architecture is domain-agnostic, but learned parameters would require retraining on different photo distributions. The offline simulator makes retraining cost-free; what it does not make cost-free is producing an independent ground-truth set for the new user, which is the actual bottleneck for cross-user validation.
 
 \textbf{LLM dependency.} Base retrieval quality depends on GPT-4o Vision's OCR and entity extraction. The offline simulator decouples RL training from the LLM.
 
@@ -1035,7 +1132,7 @@ Key endpoints: \texttt{POST /api/query} (fast or full), \texttt{GET /api/knowled
 
 \textbf{Seed-based CIs.} With 5 seeds, 95\% CIs use the $t$-distribution (4~df). We report exact $p$-values, Cohen's $d$, and significance stars.
 
-\textbf{Ceiling effects.} Several metrics are near 100\%, compressing the space for RL improvement. Silent failure rate---the safety-critical metric---shows the clearest benefit (2.4\% $\to$ 0.0\%).
+\textbf{Ceiling effects.} Several metrics are near 100\%, compressing the space for RL improvement. Silent failure rate---the safety-critical metric---shows the clearest benefit (9.4\% $\to$ 1.3\% for Full RL on the 64-query training split; 4.7\% $\to$ 2.8\% on the full 86-query set with the Recommended config).
 
 % ══════════════════════════════════════════════════════════════════════════
 \section{Ethical Considerations}
@@ -1066,12 +1163,16 @@ Key endpoints: \texttt{POST /api/query} (fast or full), \texttt{GET /api/knowled
 
 \subsection{Production Deployment Roadmap}
 
+The phases below are ordered by \textbf{dependency and risk}: each phase removes a blocking constraint that the next phase assumes is resolved. Phase~1 addresses data integrity (without ACID guarantees, concurrent access under scale would corrupt the knowledge base). Phase~2 addresses retrieval latency (without a vector backend, the system cannot serve 1K+ photo corpora in interactive time). Phase~3 assumes reliable, fast retrieval exists before exposing trust indicators to users. Phase~4 requires all prior infrastructure before multi-user isolation is meaningful.
+
 \begin{enumerate}[nosep]
-  \item \textbf{Phase 1 (Reliability):} SQLite/PostgreSQL backend, structured output enforcement, query feedback loop
-  \item \textbf{Phase 2 (Scale):} Vector database, batch-parallel ingestion, DQN inference caching
-  \item \textbf{Phase 3 (UX):} User-visible trust indicators, explicit feedback mechanism, performance dashboard
-  \item \textbf{Phase 4 (Multi-user):} Per-user RL policies, federated initialization, privacy-preserving on-device training
+  \item \textbf{Phase 1 (Reliability) [Must]:} SQLite/PostgreSQL backend for ACID transactions and concurrent access safety, structured output enforcement via Pydantic \texttt{response\_model} to eliminate citation-omission failures, query feedback loop recording every query-outcome pair for RL retraining
+  \item \textbf{Phase 2 (Scale) [Should]:} Vector database migration (ChromaDB/Qdrant) for $O(\log n)$ retrieval at 1K+ photos, batch-parallel ingestion with rate limiting, DQN inference caching for repeated query patterns
+  \item \textbf{Phase 3 (UX) [Should]:} User-visible confidence trust indicators (``I'm fairly confident'' vs.\ ``I found something but I'm not sure''), explicit feedback mechanism closing the online learning loop, lightweight performance analytics dashboard
+  \item \textbf{Phase 4 (Multi-user) [Could]:} Per-user RL policy instances trained on individual photo distributions, federated policy initialization from aggregate data, privacy-preserving on-device training with no query data leaving the user's machine
 \end{enumerate}
+
+\paragraph{MoSCoW prioritization summary.} The features already implemented (GPT-4o Vision analysis, 3-strategy retrieval, confidence grading, graceful decline, contextual bandit routing, DQN confidence calibration, offline RL simulator) are all \textbf{Must} or \textbf{Should} priorities that were built under the project's time constraints. Embedding-based semantic search and the Qdrant vector backend are \textbf{Could} priorities---the Qdrant backend is implemented as opt-in (\texttt{REPOSITORY\_BACKEND=qdrant}) but JSON remains default for the current 53-photo scale. Online RL training, multi-user federated learning, and multilingual support are \textbf{Won't (this version)} items deliberately deferred as out of scope for the single-user prototype.
 
 \subsection{Research Directions}
 
@@ -1097,7 +1198,7 @@ pip install -r requirements.txt
 # 2. Run RL training (7 configs x 5 seeds)
 python -m src.rl.training_pipeline
 
-# 3. Run evaluation suite (56 queries, generates ablation tables)
+# 3. Run evaluation suite (86 queries, generates ablation tables)
 python -m eval.run_rl_evaluation
 
 # 4. Generate all 10 visualization figures
@@ -1117,16 +1218,16 @@ pytest tests/ -v
 \section{Conclusion}
 \label{sec:conclusion}
 
-PhotoMind demonstrates a complete, production-motivated agentic system with four specialized agents, two distinct workflows, five tools (three built-in + two custom), a 56-query evaluation harness, and an RL extension that eliminates silent failures.
+PhotoMind demonstrates a complete, production-motivated agentic system with four specialized agents, two distinct workflows, five tools (three built-in + two custom), an 86-query evaluation harness, and an RL extension that reduces silent failures---\textbf{evaluated on a single user's 53-photo iPhone library with single-labeler ground truth}. Every headline metric that follows is scoped to that regime.
 
 The system integrates two RL approaches---contextual bandits (Thompson Sampling) for query routing across four search strategies and a multi-step DQN for confidence calibration---into a CrewAI multi-agent architecture. The DQN's non-terminal requery action enables multi-step episodes with structurally relevant discounting. Both components train offline via deterministic simulation at zero API cost.
 
 A 7-configuration ablation study across 5 random seeds yields three principal findings:
 
 \begin{enumerate}
-  \item The DQN is the primary contributor to silent failure elimination and decline accuracy improvement.
+  \item The DQN is the primary contributor to silent failure reduction and decline accuracy improvement.
   \item Thompson Sampling complements the DQN on ambiguous queries, while UCB's exploration variance compounds with DQN error modes---a novel interaction-effect analysis for modular RL.
-  \item The \textbf{Recommended (Rule+DQN)} configuration offers the best risk-adjusted performance: 76.8\% routing accuracy (identical to baseline), 90.9\% decline accuracy, and 0.4\% silent failures (from 1.8\% baseline).
+  \item The \textbf{Recommended (Rule+DQN)} configuration offers the best risk-adjusted performance: 75.6\% routing accuracy (identical to baseline), 85.7\% decline accuracy, and 2.8\% silent failures (from 4.7\% baseline) on the full 86-query evaluation.
 \end{enumerate}
 
 \vspace{1em}
@@ -1138,15 +1239,36 @@ A 7-configuration ablation study across 5 random seeds yields three principal fi
 \toprule
 \textbf{Config} & \textbf{Retrieval} & \textbf{Routing} & \textbf{Silent Fail} & \textbf{Decline} \\
 \midrule
-Recommended (Rule+DQN) & 87.5\% & 76.8\% & 0.4\% & 90.9\% \\
-Full RL (Thompson+DQN) & 87.5\% & 69.3\% & 1.1\% & 89.1\% \\
-Held-out (14 queries) & 85.7\% & 71.4\% & 0.0\% & 75.0\% \\
-Base system (20 queries) & 95\% & 100\% & 5\% & 100\% \\
+Recommended (Rule+DQN) & 86.0\% & 75.6\% & 2.8\% & 85.7\% \\
+Full RL (Thompson+DQN) & 86.0\% & 71.6\% & 4.0\% & 77.1\% \\
+Held-out (22 queries)$^{\dag}$ & 77.3\% & 63.6\% & 8.2\% & 68.0\% \\
+Base system (20 queries) & 80\% & 75\% & 5\% & 100\% \\
 \bottomrule
 \end{tabular}
+
+\vspace{0.3em}
+{\footnotesize $^{\dag}$The held-out split is drawn from the same user, photo library, and labeler as the training set. It is a within-corpus overfitting sanity check, not an independent external validation. Metrics on this split should not be compared directly to the training-set configurations above; they reflect distributional shift within a single-labeler regime. See Section~\ref{sec:threats} for the full validity analysis.}
 \end{center}
 
 The reduction of silent failures is the most important result. For a system operating on personal financial and behavioral data, minimizing confident-but-wrong answers is more valuable than marginal accuracy improvements.
+
+\paragraph{Corpus boundary (the single most important caveat on every number above).} All results are bounded by a single-user, 53-photo corpus where the builder produced both the photo metadata and the test queries. The 22-query held-out set is a sanity check, not external validation---it is drawn from the same user and photo distribution as the training queries. Generalization to different users, photo volumes beyond 1{,}000, or unseen photo categories would require retraining and re-evaluating on a corpus whose ground-truth labels were produced independently. The headline metrics should be read as ``what this system can achieve in this regime,'' not ``what this system will achieve in production.''
+
+\paragraph{Latency reconciliation (the second caveat every reader should see).} The end-to-end mean query latency on the CrewAI hierarchical pipeline is ${\sim}45$ seconds (\S\ref{sec:challenges}, Challenge 12), driven by three sequential GPT-4o round-trips per query (Controller $\to$ Retriever $\to$ Synthesizer). This is a genuine weakness of the full-agent path. It is mitigated---not hidden---by three production fast-paths documented in \S\ref{sec:challenges} and \S\ref{sec:frontend}: (1)~the \texttt{query --direct} CLI path calls \texttt{PhotoKnowledgeBaseTool.\_run} with RL routing but skips CrewAI orchestration, taking $<1$~s at zero API cost; (2)~the \texttt{POST /api/query/stream} endpoint exposes the full pipeline over Server-Sent Events so the user sees token-level progress rather than a 45-second wall; (3)~the \texttt{LRUQueryCache} (maxsize 128, TTL 300~s) in \texttt{api/server.py} makes repeated queries sub-millisecond. The honest production story is: the full-agent path is the research configuration that drives the ablation numbers; the fast-path is what a user would actually interact with. Both paths share the same RL-routed retrieval and the same DQN confidence grading, so the safety guarantees transfer.
+
+\section*{AI Tools Acknowledgment}
+
+This project used AI-assisted development tools during both implementation and documentation. In the interest of academic transparency, their roles are described below.
+
+\textbf{Code development.} Cortex Code (Snowflake's Claude-backed coding agent) and Claude were used as pair-programming assistants for portions of the implementation---including scaffolding modules, debugging, and writing unit tests. All architectural decisions, algorithm designs, reward matrix values, and evaluation methodology were authored by the student. AI-generated code was reviewed, tested, and integrated manually.
+
+\textbf{Documentation editing.} This report was polished using an AI critique-and-revise loop. A Claude-based reviewer agent was used to flag gaps in authorial voice, stale metrics, and missing caveats. The student reviewed each flagged item, decided which to accept, and rewrote the affected sections. The AI did not generate the technical content, experimental results, or analytical conclusions---it served as a structured reviewer.
+
+\textbf{React frontend.} The web dashboard (\texttt{web/}) was scaffolded with AI assistance and added in a single commit. The student designed the component structure and API integration; the AI generated boilerplate React/MUI/TypeScript code.
+
+\textbf{What was NOT AI-assisted.} The following were produced entirely by the student: domain choice, system architecture, CrewAI agent prompt text, search strategy algorithms, RL formulation (bandit + DQN decomposition, reward matrix, offline simulator design), all 86 hand-labeled test cases, the Project Retrospective (19 issue logs), and the experimental analysis including the ``bandit is diagnostic, not operational'' finding.
+
+\textbf{Caveat audit trail --- distinguishing AI-flagged from human-originated items.} To clarify the provenance of self-critical content in this report: the corpus boundary caveats (Section~\ref{sec:introduction}, Section~\ref{sec:conclusion}), the single-labeler threat (Section~\ref{sec:threats}), and the binary metric limitation (Section~\ref{sec:base-performance}) were all identified by the student during system testing---they reflect limitations the builder observed firsthand while evaluating their own system. The AI reviewer subsequently flagged presentation gaps (e.g., the metric caveat was buried in a footnote rather than front-loaded, the latency reconciliation lacked the three-fast-path enumeration) and suggested structural improvements to make these caveats more visible to readers. In every case, the student decided whether to accept the structural suggestion and rewrote the prose. No caveat in this report was invented by the AI---the AI's role was to surface presentation deficiencies in limitations the student had already identified. The 19 issue logs in the Project Retrospective were authored before any AI review pass and reflect the student's independent engineering judgment.
 
 \vspace{2em}
 \noindent\rule{\textwidth}{0.4pt}

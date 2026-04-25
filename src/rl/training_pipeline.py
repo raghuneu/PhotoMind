@@ -16,7 +16,7 @@ from src.rl.contextual_bandit import (
     ThompsonSamplingBandit, UCBBandit, EpsilonGreedyBandit,
 )
 from src.rl.dqn_confidence import (
-    ConfidenceDQNAgent, ConfidenceState, action_to_grade,
+    ConfidenceDQNAgent, ConfidenceState, action_to_grade, resolve_confidence_grade,
 )
 
 
@@ -238,6 +238,8 @@ class TrainingPipeline:
         all_results = {"bandit": {}, "dqn": {}, "seeds": seeds}
         best_bandit = None
         best_bandit_acc = 0.0
+        best_dqn_agent = None
+        best_dqn_reward = -float("inf")
 
         for seed in seeds:
             print(f"\n--- Seed {seed} ---")
@@ -269,8 +271,11 @@ class TrainingPipeline:
                 k: v for k, v in dqn_result.items() if k != "_agent"
             }
 
-            # Save best DQN from last seed
-            best_dqn_agent = dqn_result["_agent"]
+            # Track best DQN by avg reward
+            reward = dqn_result["avg_reward_last_100"]
+            if reward > best_dqn_reward:
+                best_dqn_reward = reward
+                best_dqn_agent = dqn_result["_agent"]
 
         # Save best models
         if best_bandit:
@@ -400,24 +405,7 @@ class TrainingPipeline:
 
                     # Confidence decision
                     if trained_dqn:
-                        state = ConfidenceState.from_retrieval(search_results, arm, features)
-                        action = trained_dqn.select_action(state)
-                        grade = action_to_grade(action)
-                        # Handle requery at eval: try alternate strategy, re-grade
-                        requery_eval = 0
-                        while grade == "REQUERY" and requery_eval < MAX_REQUERY_STEPS:
-                            alt_arms = [a for a in range(len(ARM_NAMES)) if a != arm]
-                            import random as _rand
-                            alt_arm = _rand.choice(alt_arms)
-                            alt_strategy = ARM_NAMES[alt_arm]
-                            search_results = cached.get(alt_strategy, [])
-                            arm = alt_arm
-                            state = ConfidenceState.from_retrieval(search_results, arm, features)
-                            action = trained_dqn.select_action(state)
-                            grade = action_to_grade(action)
-                            requery_eval += 1
-                        if grade == "REQUERY":
-                            grade = "D"  # fallback: treat as hedge
+                        grade, _ = resolve_confidence_grade(trained_dqn, search_results, arm, features, cached)
                     else:
                         score = search_results[0]["relevance_score"] if search_results else 0.0
                         if score >= 0.7: grade = "A"

@@ -1,89 +1,114 @@
 \contentsline {section}{\numberline {1}Introduction}{5}{section.1}%
+\contentsline {paragraph}{Corpus boundary (front-loaded).}{5}{section.1}%
+\contentsline {paragraph}{Formulation dependency disclosure.}{5}{section.1}%
 \contentsline {subsection}{\numberline {1.1}Core Capabilities}{5}{subsection.1.1}%
 \contentsline {subsection}{\numberline {1.2}Real-World Use Cases}{5}{subsection.1.2}%
 \contentsline {subsection}{\numberline {1.3}Project Scope and Contributions}{5}{subsection.1.3}%
-\contentsline {section}{\numberline {2}System Architecture}{5}{section.2}%
-\contentsline {subsection}{\numberline {2.1}High-Level Architecture}{5}{subsection.2.1}%
+\contentsline {section}{\numberline {2}System Architecture}{6}{section.2}%
+\contentsline {subsection}{\numberline {2.1}High-Level Architecture}{6}{subsection.2.1}%
 \contentsline {subsection}{\numberline {2.2}Data Flow}{6}{subsection.2.2}%
 \contentsline {paragraph}{Ingestion Pipeline.}{6}{subsection.2.2}%
 \contentsline {paragraph}{Query Pipeline.}{8}{figure.caption.2}%
 \contentsline {subsection}{\numberline {2.3}Architecture with RL Components}{10}{subsection.2.3}%
 \contentsline {subsection}{\numberline {2.4}Memory Architecture}{12}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Retrieval Backend --- Qdrant Vector DB with Hybrid Search}{12}{subsection.2.5}%
+\contentsline {paragraph}{Why $k=60$ and not something tuned.}{12}{subsection.2.5}%
 \contentsline {section}{\numberline {3}Agent Design}{12}{section.3}%
 \contentsline {subsection}{\numberline {3.1}Controller Agent (Query Crew Manager)}{12}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Photo Analyst (Ingestion Crew)}{12}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Knowledge Retriever}{12}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Insight Synthesizer}{12}{subsection.3.4}%
-\contentsline {subsection}{\numberline {3.5}Agent Collaboration Pattern}{12}{subsection.3.5}%
+\contentsline {paragraph}{Re-delegation in practice.}{13}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Photo Analyst (Ingestion Crew)}{13}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Knowledge Retriever}{13}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Insight Synthesizer}{13}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Agent Collaboration Pattern}{13}{subsection.3.5}%
 \contentsline {section}{\numberline {4}Tool Integration}{13}{section.4}%
 \contentsline {subsection}{\numberline {4.1}Built-in Tools}{13}{subsection.4.1}%
 \contentsline {subsection}{\numberline {4.2}Custom Vision Tool (\texttt {PhotoVisionTool})}{13}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Custom Knowledge Base Tool (\texttt {PhotoKnowledgeBaseTool})}{13}{subsection.4.3}%
-\contentsline {subsubsection}{\numberline {4.3.1}Input/Output Schema}{13}{subsubsection.4.3.1}%
-\contentsline {section}{\numberline {5}Search Strategies}{13}{section.5}%
+\contentsline {subsection}{\numberline {4.3}Custom Knowledge Base Tool (\texttt {PhotoKnowledgeBaseTool})}{14}{subsection.4.3}%
+\contentsline {subsubsection}{\numberline {4.3.1}Input/Output Schema}{14}{subsubsection.4.3.1}%
+\contentsline {section}{\numberline {5}Search Strategies}{14}{section.5}%
+\contentsline {paragraph}{Target user profile.}{14}{section.5}%
 \contentsline {subsection}{\numberline {5.1}Factual Search}{14}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}Semantic Search}{14}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}Behavioral Search}{14}{subsection.5.3}%
-\contentsline {subsection}{\numberline {5.4}Embedding Search (New)}{14}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.2}Semantic Search}{15}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Behavioral Search}{15}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Embedding Search (New)}{15}{subsection.5.4}%
 \contentsline {subsection}{\numberline {5.5}Confidence Grading}{15}{subsection.5.5}%
-\contentsline {section}{\numberline {6}Orchestration Design}{15}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Ingestion Crew (Sequential)}{15}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Query Crew (Hierarchical with Planning)}{15}{subsection.6.2}%
-\contentsline {subsection}{\numberline {6.3}Feedback Loop}{15}{subsection.6.3}%
-\contentsline {subsection}{\numberline {6.4}Communication Protocols}{15}{subsection.6.4}%
-\contentsline {section}{\numberline {7}Reinforcement Learning Extension}{16}{section.7}%
-\contentsline {subsection}{\numberline {7.1}Motivation}{16}{subsection.7.1}%
-\contentsline {subsection}{\numberline {7.2}RL Approach 1: Contextual Bandits}{16}{subsection.7.2}%
-\contentsline {subsubsection}{\numberline {7.2.1}Problem Formulation}{16}{subsubsection.7.2.1}%
-\contentsline {subsubsection}{\numberline {7.2.2}Context Clustering}{16}{subsubsection.7.2.2}%
-\contentsline {subsubsection}{\numberline {7.2.3}Feature Extractor}{16}{subsubsection.7.2.3}%
-\contentsline {subsubsection}{\numberline {7.2.4}Cluster Count Selection ($k=4$)}{16}{subsubsection.7.2.4}%
-\contentsline {subsubsection}{\numberline {7.2.5}Thompson Sampling}{17}{subsubsection.7.2.5}%
-\contentsline {subsubsection}{\numberline {7.2.6}UCB1}{17}{subsubsection.7.2.6}%
-\contentsline {subsubsection}{\numberline {7.2.7}Bandit Reward Function}{17}{subsubsection.7.2.7}%
-\contentsline {subsection}{\numberline {7.3}RL Approach 2: DQN Confidence Calibrator}{18}{subsection.7.3}%
-\contentsline {subsubsection}{\numberline {7.3.1}MDP Formulation}{18}{subsubsection.7.3.1}%
-\contentsline {subsubsection}{\numberline {7.3.2}Multi-Step Bellman Equation}{18}{subsubsection.7.3.2}%
-\contentsline {subsubsection}{\numberline {7.3.3}Q-Network Architecture}{18}{subsubsection.7.3.3}%
-\contentsline {subsubsection}{\numberline {7.3.4}TD Learning}{18}{subsubsection.7.3.4}%
-\contentsline {subsubsection}{\numberline {7.3.5}Reward Matrix}{19}{subsubsection.7.3.5}%
-\contentsline {subsubsection}{\numberline {7.3.6}Hyperparameters}{19}{subsubsection.7.3.6}%
-\contentsline {subsection}{\numberline {7.4}Offline Simulation Environment}{19}{subsection.7.4}%
-\contentsline {section}{\numberline {8}Base System Performance}{20}{section.8}%
-\contentsline {subsection}{\numberline {8.1}Evaluation Setup}{20}{subsection.8.1}%
-\contentsline {subsection}{\numberline {8.2}Results}{20}{subsection.8.2}%
-\contentsline {subsection}{\numberline {8.3}Per-Category Breakdown}{20}{subsection.8.3}%
-\contentsline {section}{\numberline {9}RL Experimental Results}{21}{section.9}%
-\contentsline {subsection}{\numberline {9.1}Training Convergence}{21}{subsection.9.1}%
-\contentsline {subsection}{\numberline {9.2}Primary Result: Recommended Configuration}{21}{subsection.9.2}%
-\contentsline {subsection}{\numberline {9.3}Ablation Study}{21}{subsection.9.3}%
-\contentsline {subsection}{\numberline {9.4}Statistical Significance}{22}{subsection.9.4}%
-\contentsline {subsection}{\numberline {9.5}Learning Dynamics Visualizations}{23}{subsection.9.5}%
-\contentsline {subsection}{\numberline {9.6}Held-Out Generalization}{24}{subsection.9.6}%
-\contentsline {subsection}{\numberline {9.7}Cross-Seed Variance Analysis}{25}{subsection.9.7}%
-\contentsline {section}{\numberline {10}Discussion}{25}{section.10}%
-\contentsline {subsection}{\numberline {10.1}When RL Helps}{25}{subsection.10.1}%
-\contentsline {subsection}{\numberline {10.2}Multi-Step Requery Dynamics}{25}{subsection.10.2}%
-\contentsline {subsection}{\numberline {10.3}Per-Category RL Impact}{25}{subsection.10.3}%
-\contentsline {subsection}{\numberline {10.4}Bandit $\times $ DQN Interaction Effects}{26}{subsection.10.4}%
-\contentsline {subsection}{\numberline {10.5}Routing Accuracy Regression Analysis}{26}{subsection.10.5}%
-\contentsline {subsection}{\numberline {10.6}Why Rule+DQN Outperforms Full RL}{26}{subsection.10.6}%
-\contentsline {subsection}{\numberline {10.7}Cost Analysis}{26}{subsection.10.7}%
-\contentsline {section}{\numberline {11}Scaling Analysis}{27}{section.11}%
-\contentsline {section}{\numberline {12}React Frontend and FastAPI Backend}{27}{section.12}%
-\contentsline {subsection}{\numberline {12.1}Architecture}{27}{subsection.12.1}%
-\contentsline {subsection}{\numberline {12.2}Dual Query Modes}{27}{subsection.12.2}%
-\contentsline {subsection}{\numberline {12.3}API Endpoints}{28}{subsection.12.3}%
-\contentsline {section}{\numberline {13}Challenges and Solutions}{28}{section.13}%
-\contentsline {section}{\numberline {14}Threats to Validity}{28}{section.14}%
-\contentsline {subsection}{\numberline {14.1}Internal Validity}{28}{subsection.14.1}%
-\contentsline {subsection}{\numberline {14.2}External Validity}{29}{subsection.14.2}%
-\contentsline {subsection}{\numberline {14.3}Construct Validity}{29}{subsection.14.3}%
-\contentsline {subsection}{\numberline {14.4}Statistical Conclusion Validity}{29}{subsection.14.4}%
-\contentsline {section}{\numberline {15}Ethical Considerations}{29}{section.15}%
-\contentsline {section}{\numberline {16}Future Work}{30}{section.16}%
-\contentsline {subsection}{\numberline {16.1}Immediate Extensions}{30}{subsection.16.1}%
-\contentsline {subsection}{\numberline {16.2}Production Deployment Roadmap}{30}{subsection.16.2}%
-\contentsline {subsection}{\numberline {16.3}Research Directions}{30}{subsection.16.3}%
-\contentsline {section}{\numberline {17}Reproducibility}{30}{section.17}%
-\contentsline {section}{\numberline {18}Conclusion}{31}{section.18}%
+\contentsline {paragraph}{Why \texttt {confidence\_threshold}$=0.15$ (and not 0.10 or 0.20).}{15}{table.caption.7}%
+\contentsline {paragraph}{Why the semantic-score ceiling is 0.8.}{16}{table.caption.7}%
+\contentsline {section}{\numberline {6}Orchestration Design}{16}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Ingestion Crew (Sequential)}{16}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Query Crew (Hierarchical with Planning)}{16}{subsection.6.2}%
+\contentsline {paragraph}{What \texttt {planning=True} actually contributes (honest assessment).}{16}{lstnumber.2.3}%
+\contentsline {subsection}{\numberline {6.3}Feedback Loop}{16}{subsection.6.3}%
+\contentsline {paragraph}{Adjustment bounds (production robustness guard).}{17}{subsection.6.3}%
+\contentsline {paragraph}{Production recalibration protocol.}{17}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Communication Protocols}{17}{subsection.6.4}%
+\contentsline {section}{\numberline {7}Reinforcement Learning Extension}{17}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Motivation}{17}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}RL Approach 1: Contextual Bandits}{17}{subsection.7.2}%
+\contentsline {subsubsection}{\numberline {7.2.1}Problem Formulation}{17}{subsubsection.7.2.1}%
+\contentsline {subsubsection}{\numberline {7.2.2}Context Clustering}{18}{subsubsection.7.2.2}%
+\contentsline {subsubsection}{\numberline {7.2.3}Feature Extractor}{18}{subsubsection.7.2.3}%
+\contentsline {subsubsection}{\numberline {7.2.4}Cluster Count Selection ($k=4$)}{18}{subsubsection.7.2.4}%
+\contentsline {subsubsection}{\numberline {7.2.5}Thompson Sampling}{19}{subsubsection.7.2.5}%
+\contentsline {subsubsection}{\numberline {7.2.6}UCB1}{19}{subsubsection.7.2.6}%
+\contentsline {subsubsection}{\numberline {7.2.7}Bandit Reward Function}{19}{subsubsection.7.2.7}%
+\contentsline {subsection}{\numberline {7.3}RL Approach 2: DQN Confidence Calibrator}{19}{subsection.7.3}%
+\contentsline {subsubsection}{\numberline {7.3.1}MDP Formulation}{19}{subsubsection.7.3.1}%
+\contentsline {subsubsection}{\numberline {7.3.2}Multi-Step Bellman Equation}{20}{subsubsection.7.3.2}%
+\contentsline {subsubsection}{\numberline {7.3.3}Q-Network Architecture}{20}{subsubsection.7.3.3}%
+\contentsline {subsubsection}{\numberline {7.3.4}TD Learning}{20}{subsubsection.7.3.4}%
+\contentsline {subsubsection}{\numberline {7.3.5}Reward Matrix}{21}{subsubsection.7.3.5}%
+\contentsline {paragraph}{C-band gap consequence of this reward weighting.}{21}{table.caption.10}%
+\contentsline {subsubsection}{\numberline {7.3.6}Hyperparameters}{21}{subsubsection.7.3.6}%
+\contentsline {subsection}{\numberline {7.4}Offline Simulation Environment}{21}{subsection.7.4}%
+\contentsline {section}{\numberline {8}Base System Performance}{22}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Evaluation Setup}{22}{subsection.8.1}%
+\contentsline {paragraph}{Corpus provenance note (post-PII redaction).}{22}{subsection.8.1}%
+\contentsline {paragraph}{Corpus scale reconciliation.}{22}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Results}{23}{subsection.8.2}%
+\contentsline {paragraph}{Binary metric limitation.}{23}{table.caption.13}%
+\contentsline {paragraph}{Metric provenance.}{23}{table.caption.13}%
+\contentsline {subsection}{\numberline {8.3}Per-Category Breakdown}{24}{subsection.8.3}%
+\contentsline {section}{\numberline {9}RL Experimental Results}{24}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Training Convergence}{24}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Primary Result: Recommended Configuration}{24}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Ablation Study}{25}{subsection.9.3}%
+\contentsline {subsection}{\numberline {9.4}Statistical Significance}{25}{subsection.9.4}%
+\contentsline {subsection}{\numberline {9.5}Learning Dynamics Visualizations}{26}{subsection.9.5}%
+\contentsline {subsection}{\numberline {9.6}Held-Out-Within-Corpus Overfitting Check}{28}{subsection.9.6}%
+\contentsline {subsection}{\numberline {9.7}Cross-Seed Variance Analysis}{29}{subsection.9.7}%
+\contentsline {paragraph}{Why the Recommended row shows exactly zero variance on retrieval/routing.}{29}{table.caption.25}%
+\contentsline {paragraph}{Seed sensitivity caveat---Recommended config silent failure.}{29}{table.caption.25}%
+\contentsline {section}{\numberline {10}Discussion}{29}{section.10}%
+\contentsline {subsection}{\numberline {10.1}When RL Helps}{29}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Multi-Step Requery Dynamics}{30}{subsection.10.2}%
+\contentsline {subsection}{\numberline {10.3}Per-Category RL Impact}{30}{subsection.10.3}%
+\contentsline {subsection}{\numberline {10.4}Bandit $\times $ DQN Interaction Effects}{30}{subsection.10.4}%
+\contentsline {paragraph}{Design Principle --- Upstream stochasticity compounds into downstream variance.}{30}{Item.27}%
+\contentsline {subsection}{\numberline {10.5}Routing Accuracy Regression Analysis}{31}{subsection.10.5}%
+\contentsline {paragraph}{Honest framing.}{31}{subsection.10.5}%
+\contentsline {subsection}{\numberline {10.6}Why Rule+DQN Outperforms Full RL}{31}{subsection.10.6}%
+\contentsline {subsection}{\numberline {10.7}Cost Analysis}{31}{subsection.10.7}%
+\contentsline {paragraph}{Open Work --- GAP-5: Simulator--production backend reproducibility.}{32}{subsection.10.7}%
+\contentsline {subsection}{\numberline {10.8}Open Questions Log}{32}{subsection.10.8}%
+\contentsline {section}{\numberline {11}Scaling Analysis}{34}{section.11}%
+\contentsline {section}{\numberline {12}React Frontend and FastAPI Backend}{34}{section.12}%
+\contentsline {subsection}{\numberline {12.1}Architecture}{34}{subsection.12.1}%
+\contentsline {subsection}{\numberline {12.2}Dual Query Modes}{34}{subsection.12.2}%
+\contentsline {subsection}{\numberline {12.3}API Endpoints}{35}{subsection.12.3}%
+\contentsline {section}{\numberline {13}Challenges and Solutions}{35}{section.13}%
+\contentsline {section}{\numberline {14}Threats to Validity}{36}{section.14}%
+\contentsline {subsection}{\numberline {14.1}Internal Validity}{36}{subsection.14.1}%
+\contentsline {subsection}{\numberline {14.2}External Validity}{36}{subsection.14.2}%
+\contentsline {subsection}{\numberline {14.3}Construct Validity}{37}{subsection.14.3}%
+\contentsline {subsection}{\numberline {14.4}Statistical Conclusion Validity}{37}{subsection.14.4}%
+\contentsline {section}{\numberline {15}Ethical Considerations}{37}{section.15}%
+\contentsline {section}{\numberline {16}Future Work}{38}{section.16}%
+\contentsline {subsection}{\numberline {16.1}Immediate Extensions}{38}{subsection.16.1}%
+\contentsline {subsection}{\numberline {16.2}Production Deployment Roadmap}{38}{subsection.16.2}%
+\contentsline {paragraph}{MoSCoW prioritization summary.}{38}{Item.47}%
+\contentsline {subsection}{\numberline {16.3}Research Directions}{38}{subsection.16.3}%
+\contentsline {section}{\numberline {17}Reproducibility}{39}{section.17}%
+\contentsline {section}{\numberline {18}Conclusion}{39}{section.18}%
+\contentsline {paragraph}{Corpus boundary (the single most important caveat on every number above).}{40}{Item.50}%
+\contentsline {paragraph}{Latency reconciliation (the second caveat every reader should see).}{40}{Item.50}%

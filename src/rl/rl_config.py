@@ -31,7 +31,10 @@ DECLINE_ACTION = 4          # index of the decline action
 MAX_REQUERY_STEPS = 2       # max times agent can requery before forced terminal
 
 # ── Training Config ──────────────────────────────────────────────────
-N_TRAINING_EPISODES = 2000
+# Bumped from 2000 → 4000 to give the bandit more posterior samples per
+# cluster now that features are 396-dim (handcrafted + MiniLM) instead of
+# 12-dim keyword-only. Empirically stabilizes Thompson posterior variance.
+N_TRAINING_EPISODES = 4000
 N_SEEDS = 5
 SEEDS = [42, 123, 456, 789, 1024]
 AUGMENTATION_FACTOR = 10

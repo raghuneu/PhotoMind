@@ -11,6 +11,31 @@ from src.crews.query_crew import create_query_crew
 from src.tools.feedback_store import FeedbackStore
 
 
+def _load_suite(suite: str):
+    """Return (test_cases, label, output_filename) for the named suite.
+
+    Supported suites:
+      default  -> original TEST_CASES (20 queries)
+      expanded -> ALL_TEST_CASES (56 queries)
+      held_out -> HELD_OUT_TEST_CASES (14 queries, split from expanded)
+      novel    -> NOVEL_TEST_CASES (15 hand-written intent-shift queries)
+    """
+    if suite == "default":
+        return TEST_CASES, "Default Suite", "eval_results.json"
+    if suite == "expanded":
+        from eval.expanded_test_cases import ALL_TEST_CASES
+        return ALL_TEST_CASES, "Expanded Suite", "eval_results_expanded.json"
+    if suite == "held_out":
+        from eval.expanded_test_cases import HELD_OUT_TEST_CASES
+        return HELD_OUT_TEST_CASES, "Held-Out Suite", "eval_results_held_out.json"
+    if suite == "novel":
+        from eval.novel_test_cases import NOVEL_TEST_CASES
+        return NOVEL_TEST_CASES, "Novel Suite (intent-shift)", "eval_results_novel.json"
+    raise ValueError(
+        f"Unknown suite '{suite}'. Choose from: default, expanded, held_out, novel."
+    )
+
+
 def parse_response(raw_result: str) -> dict:
     """Best-effort parse of the crew's output into structured fields."""
     text = str(raw_result).lower()
@@ -112,17 +137,23 @@ def parse_response(raw_result: str) -> dict:
     return parsed
 
 
-def run_eval():
-    """Run the full evaluation suite and print metrics."""
+def run_eval(suite: str = "default"):
+    """Run the full evaluation suite and print metrics.
+
+    Args:
+        suite: one of "default", "expanded", "held_out", "novel".
+    """
+    test_cases, label, out_filename = _load_suite(suite)
+
     print("=" * 60)
-    print("PhotoMind Evaluation Suite")
-    print(f"Running {len(TEST_CASES)} test queries...")
+    print(f"PhotoMind Evaluation Suite — {label}")
+    print(f"Running {len(test_cases)} test queries...")
     print("=" * 60)
 
     results = []
 
-    for i, tc in enumerate(TEST_CASES):
-        print(f"\n[{i+1}/{len(TEST_CASES)}] {tc['query']}")
+    for i, tc in enumerate(test_cases):
+        print(f"\n[{i+1}/{len(test_cases)}] {tc['query']}")
         start = time.time()
 
         try:
@@ -239,7 +270,7 @@ def run_eval():
 
     # Per-category breakdown
     print("\nPer-Category Breakdown:")
-    for cat in ["factual", "semantic", "behavioral", "edge_case"]:
+    for cat in ["factual", "semantic", "behavioral", "edge_case", "ambiguous"]:
         cat_results = [r for r in results if r["category"] == cat]
         if cat_results:
             cat_acc = sum(r["retrieval_correct"] for r in cat_results) / len(cat_results)
@@ -254,6 +285,7 @@ def run_eval():
     # Save results to file
     output = {
         "timestamp": datetime.now().isoformat(),
+        "suite": suite,
         "summary": {
             "retrieval_accuracy": round(retrieval_acc, 3),
             "routing_accuracy": round(routing_acc, 3),
@@ -265,9 +297,10 @@ def run_eval():
         "results": results,
     }
     os.makedirs("./eval/results", exist_ok=True)
-    with open("./eval/results/eval_results.json", "w") as f:
+    out_path = f"./eval/results/{out_filename}"
+    with open(out_path, "w") as f:
         json.dump(output, f, indent=2)
-    print(f"\nDetailed results saved to ./eval/results/eval_results.json")
+    print(f"\nDetailed results saved to {out_path}")
 
     # Append to run history for trend analysis across multiple eval runs
     history_path = "./eval/results/eval_history.json"
@@ -279,6 +312,7 @@ def run_eval():
             history = []
         history.append({
             "timestamp": output["timestamp"],
+            "suite": suite,
             "summary": output["summary"],
         })
         with open(history_path, "w") as f:
@@ -302,4 +336,9 @@ def run_eval():
 
 
 if __name__ == "__main__":
-    run_eval()
+    import sys
+    _suite = "default"
+    for arg in sys.argv[1:]:
+        if arg.startswith("--suite="):
+            _suite = arg.split("=", 1)[1]
+    run_eval(suite=_suite)

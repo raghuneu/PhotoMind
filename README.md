@@ -102,7 +102,7 @@ cp .env.example .env
 
 **Optional:**
 - `SERPER_API_KEY` — enables web search enrichment in answers
-- `REPOSITORY_BACKEND` — `qdrant` (default) or `json` for flat-file fallback
+- `REPOSITORY_BACKEND` — `json` (default) or `qdrant` for vector DB
 - `QDRANT_URL` — Qdrant server address (default: `http://localhost:6333`)
 - `QDRANT_COLLECTION` — Qdrant collection name (default: `photos`)
 - `API_KEY` — when set, protects POST endpoints with `X-API-Key` header auth
@@ -158,6 +158,10 @@ python -m src.main query "Which store do I shop at most often?"
 
 # Edge cases — system should decline gracefully
 python -m src.main query "What was my electric bill?"  # not in library
+
+# Fast path — skip CrewAI, run retrieval + routing directly
+# Zero OpenAI cost, sub-second latency, great for scripts and CI.
+python -m src.main query --direct "How much did I spend at ALDI?"
 ```
 
 ### Run the API server
@@ -176,6 +180,7 @@ Key endpoints:
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/query` | POST | API key | Query the knowledge base |
+| `/api/query/stream` | POST | API key | SSE streaming variant — emits `routing`/`retrieval`/`token`/`done` events for progressive UI rendering |
 | `/api/knowledge-base` | GET | — | List all indexed photos |
 | `/api/health` | GET | — | Health check with backend status |
 | `/api/cache/clear` | POST | API key | Clear the LRU query cache |
@@ -210,7 +215,7 @@ Results saved to `eval/results/eval_results.json`. Run history appended to `eval
 ### Train the RL components (offline, no API calls)
 
 ```bash
-# Train both components across 5 seeds (2000 episodes each, ~60s total)
+# Train both components across 5 seeds (4000 episodes each, ~120s total)
 python -m src.main train
 
 # Train with custom episode count
@@ -238,8 +243,8 @@ Replaces the keyword-based `_classify_query()` in `PhotoKnowledgeBaseTool` with 
 - **ThompsonSamplingBandit** — Beta posterior per context cluster, provably optimal exploration
 - **UCBBandit** — UCB1 upper confidence bound per cluster
 - **EpsilonGreedyBandit** — Baseline comparison
-- Context clustering via KMeans on 12-dimensional query feature vectors
-- Training: 2000 episodes × 5 seeds on offline cached search results (zero API cost)
+- Context clustering via KMeans on 396-dimensional hybrid query feature vectors (12 handcrafted + 384 MiniLM embedding dims)
+- Training: 4000 episodes × 5 seeds on offline cached search results (zero API cost)
 
 ### Approach 2: DQN — Confidence Calibration (Value-Based Learning)
 
@@ -267,7 +272,7 @@ Key finding: The DQN eliminates silent failures (Full RL: 0.0% vs 1.8% baseline;
 User Query
     │
     ▼
-[QueryFeatureExtractor]  →  12-dim feature vector
+[QueryFeatureExtractor]  →  396-dim hybrid feature vector
     │
     ▼
 [ContextualBandit]  →  selects arm: factual | semantic | behavioral
@@ -285,7 +290,7 @@ User Query
 [Insight Synthesizer]  →  graded answer with source attribution
 ```
 
-**Offline simulation training:** Both components are trained using `PhotoMindSimulator`, which pre-computes all 3 search strategies on all 56 queries once (zero API calls). Training 2000 episodes × 5 seeds × 2 components takes ~60 seconds on CPU.
+**Offline simulation training:** Both components are trained using `PhotoMindSimulator`, which pre-computes all 3 search strategies on all 56 queries once (zero API calls). Training 4000 episodes × 5 seeds × 2 components takes ~120 seconds on CPU.
 
 ## Custom Tool: PhotoKnowledgeBaseTool
 
@@ -361,7 +366,7 @@ PhotoMind/
 │   │   └── qdrant_client.py         # Qdrant connection helper (hybrid search, RRF)
 │   └── rl/
 │       ├── rl_config.py             # Centralized RL hyperparameters and reward matrix
-│       ├── feature_extractor.py     # Query → 12-dim feature vector
+│       ├── feature_extractor.py     # Query → 396-dim hybrid feature vector
 │       ├── contextual_bandit.py     # Thompson Sampling, UCB, epsilon-greedy bandits
 │       ├── dqn_confidence.py        # ConfidenceDQN and ConfidenceDQNAgent
 │       ├── replay_buffer.py         # Experience replay buffer (adapted from LunarLander)
@@ -371,6 +376,7 @@ PhotoMind/
 ├── eval/
 │   ├── test_cases.py                # 20 original hand-labeled test queries
 │   ├── expanded_test_cases.py       # 36 new cases (incl. 11 ambiguous) — 56 total
+│   ├── novel_test_cases.py          # 15 intent-shift queries for robustness testing
 │   ├── run_evaluation.py            # Base system evaluation harness
 │   ├── run_rl_evaluation.py         # RL 5-config comparison harness
 │   ├── ablation.py                  # 7-config ablation with paired t-tests
@@ -396,16 +402,28 @@ PhotoMind/
 │       ├── bandit_thompson.pkl      # Trained Thompson Sampling bandit
 │       └── dqn_confidence.pth       # Trained DQN confidence calibrator
 ├── tests/
-│   └── test_core.py                 # Core functionality tests
+│   ├── test_core.py                 # Core RL functionality tests (59 tests)
+│   ├── test_search_strategies.py    # Search strategy correctness tests (24 tests)
+│   └── test_repository.py           # Repository abstraction tests (13 tests)
+├── web/                                 # React + TypeScript + Vite frontend (MUI, Recharts)
+│   ├── src/
+│   │   ├── App.tsx                      # Main app component
+│   │   ├── components/                  # UI components
+│   │   └── theme.ts                     # MUI theme configuration
+│   ├── index.html
+│   └── package.json
 ├── docs/
-│   ├── math_formulations.md         # Mathematical formulations for RL components
-│   └── mermaid_diagrams/            # Mermaid diagram sources
+│   ├── figures/                         # Copied figures for GitHub Pages
+│   ├── math_formulations.md             # Mathematical formulations for RL components
+│   └── mermaid_diagrams/                # Mermaid diagram sources
+├── Dockerfile                           # Multi-stage build (Node frontend + Python backend)
+├── .dockerignore
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
-├── PROJECT_RETROSPECTIVE.md         # Project retrospective and lessons learned
+├── PROJECT_RETROSPECTIVE.md             # Project retrospective and lessons learned
 ├── requirements.txt
-└── TECHNICAL_REPORT.md              # Full technical documentation (base system + RL extension)
+└── TECHNICAL_REPORT.md                  # Full technical documentation (base system + RL extension)
 ```
 
 ## Known Limitations
