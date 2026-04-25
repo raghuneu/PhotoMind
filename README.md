@@ -1,11 +1,11 @@
 # PhotoMind
 
 > **Take-Home Final: Reinforcement Learning for Agentic AI Systems**
-> This project is the submission for the take-home final. The work lives on the `feature/reinforcement-learning-extension` branch
+> This project is the submission for the take-home final. The work lives on the `FinalProject` branch
 
 A multimodal personal photo knowledge retrieval system built with CrewAI. Turns your phone's photo library into a queryable knowledge base — ask natural-language questions, get answers with confidence scores and source attribution.
 
-**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind/tree/feature/reinforcement-learning-extension) · **Demo:** [youtu.be/UQRdkW2mAgc](https://www.youtube.com/watch?v=UQRdkW2mAgc)
+**Repository:** [github.com/raghuneu/PhotoMind](https://github.com/raghuneu/PhotoMind/tree/FinalProject) · **Demo:** [youtu.be/UQRdkW2mAgc](https://www.youtube.com/watch?v=UQRdkW2mAgc)
 
 [![Demo Video](Photomind_withRL.png)](https://www.youtube.com/watch?v=UQRdkW2mAgc)
 
@@ -103,9 +103,6 @@ cp .env.example .env
 **Optional:**
 - `SERPER_API_KEY` — enables web search enrichment in answers
 - `REPOSITORY_BACKEND` — `json` (default) or `qdrant` for vector DB
-- `QDRANT_URL` — Qdrant server address (default: `http://localhost:6333`)
-- `QDRANT_COLLECTION` — Qdrant collection name (default: `photos`)
-- `API_KEY` — when set, protects POST endpoints with `X-API-Key` header auth
 
 ### 4. Create directories and add photos
 
@@ -221,7 +218,7 @@ python -m src.main train
 # Train with custom episode count
 python -m src.main train 1000
 
-# Run full RL evaluation: 5 configs x 5 seeds x 56 queries
+ # Run full RL evaluation: 5 configs x 5 seeds x 83 queries
 python -m src.main rl-eval
 
 # Run 7-config ablation study → eval/results/ablation_results.json
@@ -255,7 +252,7 @@ Replaces static confidence thresholding with a DQN that learns when to accept, h
 - Actions: `accept_high`, `accept_moderate`, `hedge`, `requery`, `decline`
 - Reward: penalty matrix that heavily penalizes silent failures (confident-but-wrong answers)
 
-### RL Results (56 test queries, 5 seeds)
+### RL Results (83 test queries, 5 seeds)
 
 | Config | Retrieval | Routing | Silent Failures | Decline Acc |
 |--------|-----------|---------|-----------------|-------------|
@@ -290,7 +287,7 @@ User Query
 [Insight Synthesizer]  →  graded answer with source attribution
 ```
 
-**Offline simulation training:** Both components are trained using `PhotoMindSimulator`, which pre-computes all 3 search strategies on all 56 queries once (zero API calls). Training 4000 episodes × 5 seeds × 2 components takes ~120 seconds on CPU.
+**Offline simulation training:** Both components are trained using `PhotoMindSimulator`, which pre-computes all 3 search strategies on all 83 queries once (zero API calls). Training 4000 episodes × 5 seeds × 2 components takes ~120 seconds on CPU.
 
 ## Custom Tool: PhotoKnowledgeBaseTool
 
@@ -316,7 +313,7 @@ confidence_threshold: float = 0.15  # Minimum score to include
 
 ## Evaluation Results
 
-### Base System (25 photos, 20 queries — with Qdrant hybrid search)
+### Base System (53 photos, 20 queries — with Qdrant hybrid search)
 
 | Metric | Score |
 |--------|-------|
@@ -326,7 +323,7 @@ confidence_threshold: float = 0.15  # Minimum score to include
 | Decline Accuracy | **100%** |
 | Avg Latency | ~46s/query |
 
-### RL Extension (25 photos, 56 queries, 5 seeds)
+### RL Extension (53 photos, 83 queries, 5 seeds)
 
 | Config | Retrieval | Routing | Silent Fail | Decline Acc |
 |--------|-----------|---------|-------------|-------------|
@@ -375,7 +372,7 @@ PhotoMind/
 │       └── training_pipeline.py     # Orchestrates training across seeds
 ├── eval/
 │   ├── test_cases.py                # 20 original hand-labeled test queries
-│   ├── expanded_test_cases.py       # 36 new cases (incl. 11 ambiguous) — 56 total
+│   ├── expanded_test_cases.py       # 63 new cases (incl. 14 ambiguous) — 83 total
 │   ├── novel_test_cases.py          # 15 intent-shift queries for robustness testing
 │   ├── run_evaluation.py            # Base system evaluation harness
 │   ├── run_rl_evaluation.py         # RL 5-config comparison harness
@@ -397,13 +394,13 @@ PhotoMind/
 │   ├── scaling_benchmark.py         # Scaling and performance benchmarks
 │   └── demo_comparison.py           # Rule-based vs RL before/after demo
 ├── knowledge_base/
-│   ├── photo_index.json             # 25 indexed photos
+│   ├── photo_index.json             # 53 indexed photos
 │   └── rl_models/                   # Trained RL models
 │       ├── bandit_thompson.pkl      # Trained Thompson Sampling bandit
 │       └── dqn_confidence.pth       # Trained DQN confidence calibrator
 ├── tests/
 │   ├── test_core.py                 # Core RL functionality tests (59 tests)
-│   ├── test_search_strategies.py    # Search strategy correctness tests (24 tests)
+│   ├── test_search_strategies.py    # Search strategy correctness tests (18 tests)
 │   └── test_repository.py           # Repository abstraction tests (13 tests)
 ├── web/                                 # React + TypeScript + Vite frontend (MUI, Recharts)
 │   ├── src/
@@ -431,7 +428,7 @@ PhotoMind/
 - Semantic search uses keyword overlap, not true vector embeddings — misses synonyms
 - Qdrant backend requires Docker; falls back to flat JSON if unavailable
 - Confidence grading is calibrated for a small corpus — thresholds may need tuning at scale
-- RL bandit trained on 56 queries with 10x augmentation — may not generalize to unseen phrasing patterns outside the training distribution
+- RL bandit trained on 83 queries with 10x augmentation — may not generalize to unseen phrasing patterns outside the training distribution
 - DQN requery action selects an alternate strategy randomly rather than learning which alternate to try; a learned requery policy could improve multi-step episode returns
 - Bandit context clustering uses k=4 clusters on a small feature space — more data would support finer-grained contextualization
 - Multi-user scoping creates separate Qdrant collections per user — no shared cross-user search
