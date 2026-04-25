@@ -35,11 +35,13 @@ class FeedbackStore:
                 "factual": {"correct": 0, "total": 0},
                 "semantic": {"correct": 0, "total": 0},
                 "behavioral": {"correct": 0, "total": 0},
+                "embedding": {"correct": 0, "total": 0},
             },
             "confidence_adjustments": {
                 "factual": 0.0,
                 "semantic": 0.0,
                 "behavioral": 0.0,
+                "embedding": 0.0,
             },
         }
         if os.path.exists(self.path):

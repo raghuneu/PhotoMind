@@ -36,5 +36,5 @@ COPY --from=frontend /app/web/dist web/dist
 
 EXPOSE 8000
 
-# Default: run the FastAPI server
-CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default: run the FastAPI server (honors $PORT from Render/Fly/Cloud Run)
+CMD ["sh", "-c", "uvicorn api.server:app --host 0.0.0.0 --port ${PORT:-8000}"]

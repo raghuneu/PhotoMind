@@ -27,6 +27,8 @@ Every answer includes a confidence grade (A–F) and cites the specific source p
 
 ## Architecture
 
+![High-Level Architecture](docs/mermaid_diagrams/high_level_architecture.png)
+
 ```
 INGESTION CREW (Process.sequential)
   [Scan photos/] → [Analyze with GPT-4o Vision] → [Build JSON knowledge base]
@@ -142,28 +144,17 @@ python -m src.main ingest
 python -m src.main ingest --direct
 ```
 
-Analyzes all photos in `photos/` using GPT-4o Vision and writes to both `knowledge_base/photo_index.json` and the Qdrant vector DB (dual-write). Idempotent — re-running skips already-indexed photos. The default mode uses CrewAI agents for orchestrated ingestion; `--direct` is faster for batch processing.
+Analyzes all photos in `photos/` using GPT-4o Vision and dual-writes to `knowledge_base/photo_index.json` and Qdrant. Idempotent — re-running skips already-indexed photos.
 
 ### Query the knowledge base
 
 ```bash
-# Factual — extract specific facts
-python -m src.main query "How much did I spend at ALDI?"
-python -m src.main query "What is the address on my Trader Joe's receipt?"
+python -m src.main query "How much did I spend at ALDI?"          # factual
+python -m src.main query "Show me photos of pizza"                 # semantic
+python -m src.main query "What type of food do I photograph most?" # behavioral
+python -m src.main query "What was my electric bill?"              # edge case — should decline
 
-# Semantic — find by visual description
-python -m src.main query "Show me photos of pizza"
-python -m src.main query "Find photos that feel like summer"
-
-# Behavioral — analyze patterns
-python -m src.main query "What type of food do I photograph most?"
-python -m src.main query "Which store do I shop at most often?"
-
-# Edge cases — system should decline gracefully
-python -m src.main query "What was my electric bill?"  # not in library
-
-# Fast path — skip CrewAI, run retrieval + routing directly
-# Zero OpenAI cost, sub-second latency, great for scripts and CI.
+# Fast path — skip CrewAI, zero OpenAI cost, sub-second latency
 python -m src.main query --direct "How much did I spend at ALDI?"
 ```
 
@@ -213,7 +204,7 @@ Runs 20 test queries across 4 categories and reports:
 - Silent Failure Rate — did the system ever confidently return a wrong answer?
 - Decline Accuracy — were impossible queries correctly refused?
 
-Results saved to `eval/results/eval_results.json`. Run history appended to `eval/results/eval_history.json` for trend analysis. Each run also feeds back into the adaptive confidence threshold system via `FeedbackStore`.
+Results saved to `eval/results/eval_results.json`. Run history appended to `eval/results/eval_history.json` for trend analysis.
 
 ### Train the RL components (offline, no API calls)
 
@@ -231,9 +222,7 @@ python -m src.main rl-eval
 python -m src.main ablation
 ```
 
-RL training requires no API keys — it runs entirely on the cached knowledge base (zero API cost).
-Requires an existing `knowledge_base/photo_index.json` — run `python -m src.main ingest` first.
-Trained models are saved to `knowledge_base/rl_models/` and loaded automatically at query time.
+RL training runs entirely on the cached knowledge base (zero API cost). Requires an existing `knowledge_base/photo_index.json` — run ingestion first. Trained models are saved to `knowledge_base/rl_models/` and loaded automatically at query time.
 
 ## Reinforcement Learning Extension
 
@@ -258,40 +247,11 @@ Replaces static confidence thresholding with a DQN that learns when to accept, h
 - Actions: `accept_high`, `accept_moderate`, `hedge`, `requery`, `decline`
 - Reward: penalty matrix that heavily penalizes silent failures (confident-but-wrong answers)
 
-### RL Results (83 test queries, 5 seeds)
-
-| Config | Retrieval | Routing | Silent Failures | Decline Acc |
-|--------|-----------|---------|-----------------|-------------|
-| Baseline (Rule-Based) | 87.5% | 76.8% | 1.8% | 90.9% |
-| Full RL (Thompson+DQN) | 87.5% | 67.1% | **0.0%** | **98.2%** |
-
-Key finding: The DQN eliminates silent failures (Full RL: 0.0% vs 1.8% baseline; p < 0.0001). The bandit trades routing accuracy for silent failure reduction on ambiguous queries where the "correct" routing label is itself ambiguous.
-
-*Note: Numbers above are from the 5-config rl-eval harness. The full 7-config ablation in the technical report uses a separate run and shows slightly different values (e.g., 96.4% decline, 1.1% DQN-Only silent failure) due to the strategy_type_map correction applied before the ablation run.*
+Key result: Full RL eliminates silent failures (0.0% vs 1.8% baseline; p < 0.0001). See [Evaluation Results](#evaluation-results) for the full ablation table.
 
 ### RL Architecture
 
-```
-User Query
-    │
-    ▼
-[QueryFeatureExtractor]  →  396-dim hybrid feature vector
-    │
-    ▼
-[ContextualBandit]  →  selects arm: factual | semantic | behavioral
-    │                   (ThompsonSampling / UCB / epsilon-greedy)
-    ▼
-[PhotoKnowledgeBaseTool]  →  runs selected strategy, returns results
-    │
-    ▼
-[ConfidenceState]  →  8-dim state vector from retrieval results
-    │
-    ▼
-[ConfidenceDQN]  →  action: accept_high | accept_moderate | hedge | requery | decline
-    │
-    ▼
-[Insight Synthesizer]  →  graded answer with source attribution
-```
+![System Architecture with RL](docs/mermaid_diagrams/system_Architecture_with_RL.png)
 
 **Offline simulation training:** Both components are trained using `PhotoMindSimulator`, which pre-computes all 3 search strategies on all 83 queries once (zero API calls). Training 4000 episodes × 5 seeds × 2 components takes ~120 seconds on CPU.
 
@@ -339,6 +299,8 @@ confidence_threshold: float = 0.15  # Minimum score to include
 | Full RL (Thompson+DQN) | 87.5% | 67.1% | **0.0%** | **98.2%** |
 
 Statistical tests (Full RL vs Baseline): silent failure p < 0.0001 (***), decline accuracy p = 0.016 (*)
+
+![Ablation Study Comparison](docs/figures/ablation_comparison.png)
 
 ## Project Structure
 
@@ -430,13 +392,3 @@ PhotoMind/
 ├── requirements.txt
 └── TECHNICAL_REPORT.md                  # Full technical documentation (base system + RL extension)
 ```
-
-## Known Limitations
-
-- Semantic search uses keyword overlap, not true vector embeddings — misses synonyms
-- Qdrant backend requires Docker; falls back to flat JSON if unavailable
-- Confidence grading is calibrated for a small corpus — thresholds may need tuning at scale
-- RL bandit trained on 83 queries with 10x augmentation — may not generalize to unseen phrasing patterns outside the training distribution
-- DQN requery action selects an alternate strategy randomly rather than learning which alternate to try; a learned requery policy could improve multi-step episode returns
-- Bandit context clustering uses k=4 clusters on a small feature space — more data would support finer-grained contextualization
-- Multi-user scoping creates separate Qdrant collections per user — no shared cross-user search

@@ -130,9 +130,9 @@ def parse_response(raw_result: str) -> dict:
                     parsed["query_type"] = qt
                     break
 
-    # Extract photo filenames (look for .jpg, .png patterns)
-    photos = re.findall(r'[\w\-]+\.(?:jpg|jpeg|png|webp|heic)', text, re.IGNORECASE)
-    parsed["source_photos"] = [p.lower() for p in photos]
+    # Extract photo filenames (allow spaces, parens, and other common filename chars)
+    photos = re.findall(r'[\w\s\-\(\)]+\.(?:jpg|jpeg|png|webp|heic)', text, re.IGNORECASE)
+    parsed["source_photos"] = [p.strip().lower() for p in photos]
     parsed["raw"] = str(raw_result)
     return parsed
 
@@ -183,6 +183,11 @@ def run_eval(suite: str = "default"):
             else:
                 retrieval_correct = True  # No specific photo expected
 
+            # Score: answer content validation (e.g. "18.69" appears in response)
+            answer_correct = None
+            if tc.get("expected_answer_contains"):
+                answer_correct = tc["expected_answer_contains"].lower() in parsed["raw"].lower()
+
             # Score: routing accuracy
             routing_correct = parsed["query_type"] == tc["expected_type"]
 
@@ -200,6 +205,7 @@ def run_eval(suite: str = "default"):
                 "query": tc["query"],
                 "category": tc["category"],
                 "retrieval_correct": retrieval_correct,
+                "answer_correct": answer_correct,
                 "routing_correct": routing_correct,
                 "confidence_grade": parsed["confidence_grade"],
                 "silent_failure": silent_failure,
@@ -208,7 +214,10 @@ def run_eval(suite: str = "default"):
             }
             results.append(result)
             status = "PASS" if retrieval_correct else "FAIL"
-            print(f"  -> {status} | Grade: {parsed['confidence_grade']} | {elapsed:.1f}s")
+            answer_tag = ""
+            if answer_correct is not None:
+                answer_tag = f" | Answer: {'YES' if answer_correct else 'MISSING'}"
+            print(f"  -> {status} | Grade: {parsed['confidence_grade']}{answer_tag} | {elapsed:.1f}s")
 
             # Record outcome in feedback store for adaptive learning
             try:
@@ -237,10 +246,12 @@ def run_eval(suite: str = "default"):
                 "query": tc["query"],
                 "category": tc["category"],
                 "retrieval_correct": retrieval_correct,
+                "answer_correct": None,
                 "routing_correct": False,
                 "confidence_grade": "F",
                 "silent_failure": False,
-                "declined_correctly": True if tc.get("should_decline") else None,
+                # Errors are NOT correct declines — the system crashed, not declined gracefully
+                "declined_correctly": False if tc.get("should_decline") else None,
                 "latency_s": round(elapsed, 2),
                 "error": str(e),
             })
@@ -259,10 +270,17 @@ def run_eval(suite: str = "default"):
         if decline_cases else 0
     )
 
+    answer_cases = [r for r in results if r["answer_correct"] is not None]
+    answer_acc = (
+        sum(r["answer_correct"] for r in answer_cases) / len(answer_cases)
+        if answer_cases else 0
+    )
+
     print("\n" + "=" * 60)
     print("EVALUATION RESULTS")
     print("=" * 60)
     print(f"Retrieval Accuracy:   {retrieval_acc:.1%}")
+    print(f"Answer Accuracy:      {answer_acc:.1%} ({len(answer_cases)} validated)")
     print(f"Routing Accuracy:     {routing_acc:.1%}")
     print(f"Silent Failure Rate:  {silent_failure_rate:.1%}")
     print(f"Decline Accuracy:     {decline_acc:.1%}")
@@ -288,6 +306,7 @@ def run_eval(suite: str = "default"):
         "suite": suite,
         "summary": {
             "retrieval_accuracy": round(retrieval_acc, 3),
+            "answer_accuracy": round(answer_acc, 3),
             "routing_accuracy": round(routing_acc, 3),
             "silent_failure_rate": round(silent_failure_rate, 3),
             "decline_accuracy": round(decline_acc, 3),

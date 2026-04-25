@@ -21,6 +21,9 @@ from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file so OPENAI_API_KEY is available for CrewAI
+
 from fastapi import FastAPI, HTTPException, Depends, Header, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
@@ -54,9 +57,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_default_origins = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+_allowed_origins = [
+    o.strip() for o in os.getenv("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -342,15 +350,33 @@ def _full_query(req: QueryRequest, start: float) -> dict:
         result_text = str(result)
         grade, score = _parse_crew_confidence(result_text)
         photos = re.findall(r'[\w\-]+\.(?:jpg|jpeg|png|webp|heic)', result_text, re.IGNORECASE)
+        source_photos = list(dict.fromkeys(p.lower() for p in photos))  # dedupe, preserve order
+
+        # Resolve lowercased filenames → KB UUIDs so thumbnail/image endpoints work
+        kb = _load_kb()
+        fname_to_id = {p["filename"].lower(): p["id"] for p in kb.get("photos", [])}
+
+        # Build result objects from extracted photo filenames so the UI can
+        # render photo cards for Deep Reasoning results (previously empty).
+        crew_results = []
+        for i, photo_path in enumerate(source_photos):
+            crew_results.append({
+                "photo_id": fname_to_id.get(photo_path, photo_path),
+                "photo_path": photo_path,
+                "relevance_score": round(max(score - i * 0.05, 0.1), 3),
+                "evidence": f"Identified by CrewAI deep reasoning pipeline",
+                "image_type": "unknown",
+            })
+
         return {
             "query": req.query,
             "mode": "full",
             "query_type_detected": "crewai_hierarchical",
-            "results": [],
+            "results": crew_results,
             "confidence_grade": grade,
             "confidence_score": score,
             "answer_summary": result_text[:2000],
-            "source_photos": [p.lower() for p in photos],
+            "source_photos": source_photos,
             "warning": None,
             "latency_s": round(elapsed, 3),
             "routing_source": "crewai_hierarchical_process",
@@ -461,6 +487,23 @@ async def _stream_full_query(req: "QueryRequest"):
     result_text = str(result)
     grade, score = _parse_crew_confidence(result_text)
     photos = re.findall(r'[\w\-]+\.(?:jpg|jpeg|png|webp|heic)', result_text, re.IGNORECASE)
+    source_photos = list(dict.fromkeys(p.lower() for p in photos))
+
+    # Resolve lowercased filenames → KB UUIDs so thumbnail/image endpoints work
+    kb = _load_kb()
+    fname_to_id = {p["filename"].lower(): p["id"] for p in kb.get("photos", [])}
+
+    # Build result objects so the UI can render photo cards
+    crew_results = []
+    for i, photo_path in enumerate(source_photos):
+        crew_results.append({
+            "photo_id": fname_to_id.get(photo_path, photo_path),
+            "photo_path": photo_path,
+            "relevance_score": round(max(score - i * 0.05, 0.1), 3),
+            "evidence": "Identified by CrewAI deep reasoning pipeline",
+            "image_type": "unknown",
+        })
+
     yield _format_sse("done", {
         "query": req.query,
         "mode": "full",
@@ -468,8 +511,8 @@ async def _stream_full_query(req: "QueryRequest"):
         "answer_summary": result_text[:2000],
         "confidence_grade": grade,
         "confidence_score": score,
-        "source_photos": [p.lower() for p in photos],
-        "results": [],
+        "source_photos": source_photos,
+        "results": crew_results,
         "warning": None,
         "latency_s": round(time.time() - start, 3),
         "routing_source": "crewai_hierarchical_process",

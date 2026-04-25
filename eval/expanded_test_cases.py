@@ -513,7 +513,7 @@ EXPANDED_TEST_CASES = [
     {
         "query": "How much does a Chipotle bowl cost?",
         "expected_type": "factual",
-        "expected_photo": "IMG_1762.HEIC",
+        "expected_photo": None,
         "expected_answer_contains": None,
         "should_decline": True,
         "category": "ambiguous",
@@ -522,7 +522,8 @@ EXPANDED_TEST_CASES = [
             "IMG_1762.HEIC will match. But that photo is a food photo with no receipt/price OCR — "
             "only the Chipotle bag text. The KB cannot answer the PRICE of a Chipotle bowl. "
             "should_decline=True because retrieval will find the photo but cannot provide the "
-            "price. Tests that the system does not hallucinate a price from a food photo."
+            "price. Tests that the system does not hallucinate a price from a food photo. "
+            "expected_photo=None: correct behavior is to decline, not to return the photo."
         ),
     },
 

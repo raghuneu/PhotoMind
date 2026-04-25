@@ -4,12 +4,15 @@ import { ThemeProvider, CssBaseline } from '@mui/material'
 import { nprTheme } from './theme'
 import './index.css'
 import App from './App.tsx'
+import BackendGate from './components/BackendGate'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider theme={nprTheme}>
       <CssBaseline />
-      <App />
+      <BackendGate>
+        <App />
+      </BackendGate>
     </ThemeProvider>
   </StrictMode>,
 )

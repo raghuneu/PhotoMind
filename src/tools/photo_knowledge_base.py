@@ -73,7 +73,7 @@ class PhotoKBQueryInput(BaseModel):
         description="Number of top results to return"
     )
     confidence_threshold: float = Field(
-        default=0.15,
+        default=0.25,
         description="Minimum confidence score (0-1) to include a result"
     )
 
@@ -108,7 +108,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
         query: str,
         query_type: str = "auto",
         top_k: int = 3,
-        confidence_threshold: float = 0.15,
+        confidence_threshold: float = 0.25,
     ) -> str:
         """Execute a query against the photo knowledge base."""
         try:
@@ -144,6 +144,18 @@ class PhotoKnowledgeBaseTool(BaseTool):
                     if rl_type == "behavioral" and not self._has_behavioral_intent(query):
                         query_type = self._classify_query(query)
                         routing_source = "rule_based"
+                    # Symmetric guard: reject bandit's non-behavioral pick
+                    # when the query has strong behavioral intent.  Queries
+                    # like "how many receipts" and "which store do I shop at
+                    # most" were being routed to factual by the bandit.
+                    elif rl_type != "behavioral" and self._has_behavioral_intent(query):
+                        rule_type = self._classify_query(query)
+                        if rule_type == "behavioral":
+                            query_type = "behavioral"
+                            routing_source = "rule_based"
+                        else:
+                            query_type = rl_type
+                            routing_source = "rl_bandit"
                     else:
                         query_type = rl_type
                         routing_source = "rl_bandit"
@@ -193,8 +205,12 @@ class PhotoKnowledgeBaseTool(BaseTool):
             output_results = filtered if is_aggregation else filtered[:top_k]
 
             # Calculate confidence grade
-            if not output_results:
+            # Minimum-score floor: if the best result is below this threshold
+            # the query is effectively unanswerable — treat as no results.
+            _RELEVANCE_FLOOR = 0.25
+            if not output_results or output_results[0]["relevance_score"] < _RELEVANCE_FLOOR:
                 grade, score = "F", 0.0
+                output_results = []  # discard noise-level matches
                 warning = (
                     "NO MATCHING PHOTOS FOUND. The knowledge base does not contain "
                     "information related to this query. You MUST decline to answer "
@@ -241,17 +257,34 @@ class PhotoKnowledgeBaseTool(BaseTool):
 
     # ── RL-Powered Query Routing ────────────────────────────────────────
 
+    def _get_rl_components(self):
+        """Lazy-load and cache RL models and feature extractor at instance level."""
+        if not hasattr(self, "_rl_cache"):
+            self._rl_cache = {}
+        if not self._rl_cache:
+            try:
+                from src.rl.contextual_bandit import load_trained_bandit
+                from src.rl.dqn_confidence import load_trained_dqn
+                from src.rl.feature_extractor import QueryFeatureExtractor
+                from src.rl.rl_config import BANDIT_MODEL_PATH, DQN_MODEL_PATH
+
+                self._rl_cache["bandit"] = load_trained_bandit(BANDIT_MODEL_PATH)
+                self._rl_cache["dqn"] = load_trained_dqn(DQN_MODEL_PATH)
+                self._rl_cache["extractor"] = QueryFeatureExtractor(self.knowledge_base_path)
+            except Exception:
+                self._rl_cache = {}  # reset so we retry next time
+        return self._rl_cache
+
     def _rl_classify_query(self, query: str) -> str | None:
         """Use trained contextual bandit for query routing. Returns None on failure."""
         try:
-            from src.rl.contextual_bandit import load_trained_bandit
-            from src.rl.feature_extractor import QueryFeatureExtractor
-            from src.rl.rl_config import ARM_NAMES, BANDIT_MODEL_PATH
+            from src.rl.rl_config import ARM_NAMES
 
-            bandit = load_trained_bandit(BANDIT_MODEL_PATH)
-            if bandit is None:
+            cache = self._get_rl_components()
+            bandit = cache.get("bandit")
+            extractor = cache.get("extractor")
+            if bandit is None or extractor is None:
                 return None
-            extractor = QueryFeatureExtractor(self.knowledge_base_path)
             features = extractor.extract(query)
             arm = bandit.select_arm(features)
             return ARM_NAMES[arm]
@@ -265,15 +298,15 @@ class PhotoKnowledgeBaseTool(BaseTool):
         we run an alternate search strategy and let the DQN re-evaluate.
         """
         try:
-            from src.rl.dqn_confidence import load_trained_dqn, ConfidenceState, action_to_grade
-            from src.rl.feature_extractor import QueryFeatureExtractor
-            from src.rl.rl_config import ARM_NAMES, DQN_MODEL_PATH, MAX_REQUERY_STEPS
+            from src.rl.dqn_confidence import ConfidenceState, action_to_grade
+            from src.rl.rl_config import ARM_NAMES, MAX_REQUERY_STEPS
             import random as _rand
 
-            agent = load_trained_dqn(DQN_MODEL_PATH)
-            if agent is None:
+            cache = self._get_rl_components()
+            agent = cache.get("dqn")
+            extractor = cache.get("extractor")
+            if agent is None or extractor is None:
                 return None
-            extractor = QueryFeatureExtractor(self.knowledge_base_path)
             features = extractor.extract(query)
             strategy_idx = ARM_NAMES.index(strategy) if strategy in ARM_NAMES else 1
             state = ConfidenceState.from_retrieval(results, strategy_idx, features)
@@ -283,6 +316,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
 
             # Handle requery: try alternate strategy up to MAX_REQUERY_STEPS
             requery_count = 0
+            best_score = score  # track best score across requery attempts
             current_strategy_idx = strategy_idx
             while grade == "REQUERY" and requery_count < MAX_REQUERY_STEPS:
                 alt_arms = [a for a in range(len(ARM_NAMES)) if a != current_strategy_idx]
@@ -301,11 +335,14 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 state = ConfidenceState.from_retrieval(results, new_arm, features)
                 action = agent.select_action(state)
                 score = results[0]["relevance_score"] if results else 0.0
+                best_score = max(best_score, score)
                 grade = action_to_grade(action, score)
                 requery_count += 1
 
             if grade == "REQUERY":
-                grade = "D"  # fallback: treat as hedge
+                # Exhausted requery budget — fall back to rule-based grading
+                # using the best score observed across all attempts.
+                grade = self._score_to_grade(best_score)
 
             return grade
         except Exception:
@@ -317,17 +354,40 @@ class PhotoKnowledgeBaseTool(BaseTool):
         """Rule-based query intent classification."""
         q = _clean(query)
 
-        behavioral_keywords = [
-            "most", "often", "frequently", "pattern", "trend", "favorite",
-            "usually", "habit", "how many times", "how many", "what kind of",
-            "what type of", "distribution", "breakdown", "more", "less",
-            "compare", "versus", "vs", "prefer", "average",
+        # ── Behavioral-priority patterns ──
+        # These multi-word patterns indicate aggregation / counting / comparison
+        # intent even when factual keywords like "receipt" co-occur.
+        # Checked BEFORE the factual keyword list to avoid misrouting
+        # "how many receipts" → factual (wrong) instead of behavioral (correct).
+        behavioral_priority_patterns = [
+            "how many",           # "how many receipts do I have"
+            "how often",          # "how often do I shop"
+            "which store",        # "which store do I shop at most"
+            "which.*most",        # "which type do I have the most"
+            "do i.*more",         # "do I shop more at ALDI or TJ"
+            "most expensive",     # "what is the most expensive purchase"
+            "most frequent",      # "what is the most frequent"
+            "shop at most",       # "where do I shop at most"
+            "total across",       # "what is the total across all receipts"
+            "across all",         # "across all receipts"
+            "on average",         # "what do I spend on average"
         ]
+        import re as _re
+        for pat in behavioral_priority_patterns:
+            if _re.search(pat, q):
+                return "behavioral"
+
         factual_keywords = [
             "how much", "what amount", "total", "price", "cost", "date",
             "when", "bill", "receipt", "invoice", "payment", "account number",
             "phone number", "address", "due", "vendor", "company", "items",
-            "number", "balance", "owe", "paid",
+            "balance", "owe", "paid",
+        ]
+        behavioral_keywords = [
+            "most", "often", "frequently", "pattern", "trend", "favorite",
+            "usually", "habit", "how many times", "how many", "what kind of",
+            "what type of", "distribution", "breakdown",
+            "compare", "versus", "vs", "prefer", "average",
         ]
         semantic_keywords = [
             "show me", "look like", "feel like", "similar to", "remind",
@@ -335,11 +395,12 @@ class PhotoKnowledgeBaseTool(BaseTool):
             "scenic", "outdoor", "beautiful", "mood", "find a",
         ]
 
-        # Check behavioral first — "how many receipts" should be behavioral, not factual
-        if any(kw in q for kw in behavioral_keywords):
-            return "behavioral"
-        elif any(kw in q for kw in factual_keywords):
+        # Check factual first — precise entity/amount queries take priority
+        # over aggregation keywords that may co-occur (e.g. "how much total")
+        if any(kw in q for kw in factual_keywords):
             return "factual"
+        elif any(kw in q for kw in behavioral_keywords):
+            return "behavioral"
         elif any(kw in q for kw in semantic_keywords):
             return "semantic"
         else:
@@ -347,14 +408,23 @@ class PhotoKnowledgeBaseTool(BaseTool):
 
     def _has_behavioral_intent(self, query: str) -> bool:
         """Check if query contains behavioral-intent keywords."""
+        import re as _re
         q = _clean(query)
         behavioral_signals = [
             "most", "often", "frequently", "pattern", "trend", "favorite",
             "usually", "habit", "how many times", "how many", "what kind of",
-            "what type of", "distribution", "breakdown", "more", "less",
+            "what type of", "distribution", "breakdown",
             "compare", "versus", "vs", "prefer", "average",
         ]
-        return any(kw in q for kw in behavioral_signals)
+        # Also check multi-word patterns that are strong behavioral signals
+        behavioral_patterns = [
+            "how many", "how often", "which store", "which.*most",
+            "do i.*more", "most expensive", "most frequent",
+            "total across", "across all", "on average",
+        ]
+        if any(kw in q for kw in behavioral_signals):
+            return True
+        return any(_re.search(pat, q) for pat in behavioral_patterns)
 
     # ── Search Strategies ────────────────────────────────────────────────
 
@@ -369,6 +439,20 @@ class PhotoKnowledgeBaseTool(BaseTool):
         # entities like topic="How to build AI agents" on a spending query.
         meaningful_words = [w for w in words if len(w) > 3 and w not in _STOP_WORDS]
 
+        # Identify "distinctive" query terms — proper nouns / brand names that
+        # are NOT generic category words.  If the query contains a distinctive
+        # term and a result matches only generic terms but NOT the distinctive
+        # one, the result gets penalised.  This prevents "Netflix subscription
+        # receipt" from returning random receipts at grade A.
+        _GENERIC_CATEGORY_WORDS = {
+            "receipt", "receipts", "bill", "bills", "photo", "photos",
+            "picture", "pictures", "document", "documents", "invoice",
+            "invoices", "subscription", "order", "purchase", "payment",
+            "find", "show", "total",
+        }
+        distinctive_words = [w for w in meaningful_words
+                             if w.lower() not in _GENERIC_CATEGORY_WORDS]
+
         for photo in kb["photos"]:
             score = 0.0
             evidence_parts = []
@@ -381,10 +465,11 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 if any(w in val_tokens for w in meaningful_words):
                     score += 0.4
                     evidence_parts.append(f"{etype}: {entity['value']}")
-                # Boost if entity type matches query context
-                if etype in q.split():
-                    score += 0.1
-                    evidence_parts.append(f"{etype}: {entity['value']}")
+                    # Boost if entity type also matches query context
+                    # (only when the value already matched — avoids inflating
+                    # scores on generic type words like "amount" or "date")
+                    if etype in q.split():
+                        score += 0.1
 
             # Match against OCR text (uses the same meaningful-word filter)
             ocr_text = _clean(photo.get("ocr_text", ""))
@@ -395,11 +480,25 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 if word_score > 0:
                     evidence_parts.append("OCR text match")
 
-            # Image type bonus
-            if photo.get("image_type", "").lower() in q:
+            # Image type bonus (guard against empty string — "" in q is always True)
+            img_type = photo.get("image_type", "").lower()
+            if img_type and img_type in q:
                 score += 0.2
 
             score = min(score, 1.0)
+
+            # Distinctive-term penalty: if the query has brand-name / proper
+            # noun terms and NONE of them appear in this photo's entities or
+            # OCR, the match is likely coincidental on generic words.
+            if distinctive_words and score > 0:
+                photo_blob = (
+                    " ".join(_clean(e.get("value", "")) for e in photo.get("entities", []))
+                    + " " + _clean(photo.get("ocr_text", ""))
+                ).lower()
+                distinctive_hits = sum(1 for w in distinctive_words if w in photo_blob)
+                if distinctive_hits == 0:
+                    score = min(score, 0.20)
+
             if score > 0:
                 # Deduplicate evidence
                 evidence_parts = list(dict.fromkeys(evidence_parts))
@@ -472,8 +571,11 @@ class PhotoKnowledgeBaseTool(BaseTool):
             overlap = query_words & combined_words
             # Ignore very short words (a, the, is, etc.)
             meaningful_overlap = {w for w in overlap if len(w) > 3}
-            # Normalize by meaningful query word count, not total query length
-            score = len(meaningful_overlap) / max(len(meaningful_query_words), 1) * 0.8
+            # Normalize by meaningful query word count with a floor of 3 to
+            # prevent single-keyword queries from reaching grade A.  A query
+            # with 1 meaningful word now scores at most 0.8/3 ≈ 0.27 (grade D)
+            # instead of 0.8 (grade A).
+            score = len(meaningful_overlap) / max(len(meaningful_query_words), 3) * 0.8
 
             # Image type relevance boost
             img_type = photo.get("image_type", "").lower()
@@ -491,7 +593,7 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 })
 
         results.sort(key=lambda x: x["relevance_score"], reverse=True)
-        return results[:top_k]
+        return results  # caller applies top_k after relevance-floor filtering
 
     def _behavioral_search(self, query: str, kb: dict, top_k: int) -> list:
         """Analyze patterns across photos for behavioral queries."""
@@ -662,7 +764,11 @@ class PhotoKnowledgeBaseTool(BaseTool):
                 if matched_type and total_photos > 0:
                     score += (type_counts.get(matched_type, 0) / total_photos) * 0.4
 
-            score = min(score, 1.0)
+            # Cap: primary-match path can reach 1.0, but fallback path
+            # (no direct entity evidence) is capped at 0.55 to prevent
+            # grade-A inflation on purely type-frequency guesses.
+            cap = 1.0 if used_primary else 0.55
+            score = min(score, cap)
 
             results.append({
                 "photo_id": photo["id"],
@@ -751,20 +857,45 @@ class PhotoKnowledgeBaseTool(BaseTool):
         Merges the ranked lists from embedding_search (semantic depth) and
         factual_search (entity precision), producing a single blended list.
         Only used when a repository with vector search is available.
+
+        **Relevance gate**: If the best raw embedding similarity is below
+        _HYBRID_MIN_SIMILARITY, the query is effectively unrelated to the
+        knowledge base and RRF would only amplify noise.  In that case we
+        return an empty list so the caller grades as F.
         """
+        _HYBRID_MIN_SIMILARITY = 0.35  # raw cosine-sim floor
         RRF_K = 60
 
         # Gather ranked lists from two complementary strategies
         embedding_results = self._embedding_search(query, kb, top_k=top_k * 2)
         factual_results = self._factual_search(query, kb, top_k=top_k * 2)
 
+        # ── Relevance gate ──
+        # Check whether the best embedding result has meaningful similarity.
+        # Embedding scores are raw cosine similarities (0-1).  When the best
+        # score is below the threshold, the query has no semantic match in the
+        # KB — RRF normalization would map noise-level results to high scores.
+        best_emb_sim = 0.0
+        if embedding_results:
+            best_emb_sim = max(r["relevance_score"] for r in embedding_results)
+        best_fact_score = 0.0
+        if factual_results:
+            best_fact_score = max(r["relevance_score"] for r in factual_results)
+
+        # If neither strategy found a meaningful match, bail out early.
+        if best_emb_sim < _HYBRID_MIN_SIMILARITY and best_fact_score < 0.25:
+            return []
+
         # Build RRF score map keyed by photo_id
         rrf_scores: dict[str, float] = {}
         result_map: dict[str, dict] = {}
+        # Track raw embedding similarity per photo for score capping
+        raw_emb_sim: dict[str, float] = {}
 
         for rank, r in enumerate(embedding_results):
             pid = r["photo_id"]
             rrf_scores[pid] = rrf_scores.get(pid, 0.0) + 1.0 / (RRF_K + rank + 1)
+            raw_emb_sim[pid] = r["relevance_score"]
             if pid not in result_map:
                 result_map[pid] = r
 
@@ -780,8 +911,13 @@ class PhotoKnowledgeBaseTool(BaseTool):
         if not sorted_ids:
             return []
 
-        # Normalize RRF scores to 0.2–1.0 so they are compatible with the
-        # confidence_threshold (default 0.15) and _score_to_grade boundaries.
+        # ── Score normalization with similarity anchoring ──
+        # Instead of blindly normalizing to 0.2-1.0, anchor the final score
+        # to the actual relevance signal.  The raw embedding similarity is
+        # the most honest relevance indicator; RRF rank is just an ordering
+        # heuristic.  Final score = weighted blend of RRF rank-score and
+        # the raw embedding similarity, ensuring low-similarity results
+        # never inflate to grade A.
         max_rrf = rrf_scores[sorted_ids[0]]
         min_rrf = rrf_scores[sorted_ids[-1]] if len(sorted_ids) > 1 else 0.0
         rrf_range = max_rrf - min_rrf
@@ -790,11 +926,22 @@ class PhotoKnowledgeBaseTool(BaseTool):
         for pid in sorted_ids[:top_k]:
             r = result_map[pid].copy()
             if rrf_range > 0:
-                normalized = (rrf_scores[pid] - min_rrf) / rrf_range * 0.8 + 0.2
+                rrf_norm = (rrf_scores[pid] - min_rrf) / rrf_range
             else:
-                normalized = 0.5
-            r["relevance_score"] = round(normalized, 4)
-            r["evidence"] = f"[hybrid/RRF] {r.get('evidence', '')}"
+                rrf_norm = 0.5
+
+            emb_sim = raw_emb_sim.get(pid, 0.0)
+            # Blend: 40% RRF rank position + 60% raw embedding similarity.
+            # This prevents RRF normalization from inflating irrelevant results.
+            blended = 0.4 * rrf_norm + 0.6 * emb_sim
+            # Hard cap: when embedding similarity is below the threshold,
+            # the result is semantically unrelated regardless of keyword
+            # overlap.  Cap score to prevent grade inflation.
+            if emb_sim < _HYBRID_MIN_SIMILARITY:
+                blended = min(blended, 0.20)
+
+            r["relevance_score"] = round(blended, 4)
+            r["evidence"] = f"[hybrid/RRF emb={emb_sim:.3f}] {r.get('evidence', '')}"
             results.append(r)
         return results
 

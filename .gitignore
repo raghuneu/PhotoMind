@@ -208,6 +208,7 @@ __marimo__/
 
 # PhotoMind
 knowledge_base/photo_index.json
+knowledge_base/feedback_store.json
 eval/results/
 .DS_Store
 

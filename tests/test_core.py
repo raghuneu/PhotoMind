@@ -376,9 +376,9 @@ class TestTrainTestSplit:
         from eval.expanded_test_cases import (
             ALL_TEST_CASES, TRAIN_TEST_CASES, HELD_OUT_TEST_CASES,
         )
-        assert len(ALL_TEST_CASES) == 56
-        assert len(TRAIN_TEST_CASES) == 42
-        assert len(HELD_OUT_TEST_CASES) == 14
+        assert len(ALL_TEST_CASES) == 83
+        assert len(TRAIN_TEST_CASES) == 62
+        assert len(HELD_OUT_TEST_CASES) == 21
 
     def test_no_overlap(self):
         from eval.expanded_test_cases import TRAIN_TEST_CASES, HELD_OUT_TEST_CASES
