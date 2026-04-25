@@ -96,7 +96,7 @@ export default function App() {
               <PageHeader
                 overline="Knowledge base"
                 title="Every photo, indexed and searchable."
-                subtitle="The 25 photos PhotoMind reads before answering. Filter by type, search text, and expand any card to see extracted OCR and entities."
+                subtitle="The photos PhotoMind reads before answering. Filter by type, search text, and expand any card to see extracted OCR and entities."
               />
               <KBBrowser />
             </>
