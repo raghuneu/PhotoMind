@@ -16,7 +16,7 @@ const FACTOIDS = [
   'A contextual bandit learns which retrieval strategy to pick for each query type.',
   'A DQN confidence calibrator decides when to accept, hedge, or decline an answer.',
   'Every answer comes with a grade (A–F) and the exact photos it was drawn from.',
-  'The evaluation suite covers 56 hand-labeled queries across factual, semantic, and behavioral intents.',
+  'The evaluation suite covers 83 hand-labeled queries across factual, semantic, behavioral, edge-case, and ambiguous intents.',
   'RL training runs offline on CPU — no API calls, ~120 s for 4000 episodes × 5 seeds.',
   'Silent failures — confident-but-wrong answers — are penalized at −1.0 during RL training.',
 ]

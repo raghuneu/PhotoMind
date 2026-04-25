@@ -25,10 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project source
 COPY src/ src/
 COPY api/ api/
+COPY scripts/ scripts/
 COPY eval/ eval/
 COPY knowledge_base/ knowledge_base/
 COPY viz/ viz/
-COPY photos/ photos/
 COPY .env.example .env.example
 
 # Copy built frontend from stage 1
@@ -36,5 +36,6 @@ COPY --from=frontend /app/web/dist web/dist
 
 EXPOSE 8000
 
-# Default: run the FastAPI server (honors $PORT from Render/Fly/Cloud Run)
-CMD ["sh", "-c", "uvicorn api.server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# On container start: download photos + photo_index.json from R2 (if configured),
+# then launch the FastAPI server. $PORT is honored for Render/Fly/Cloud Run.
+CMD ["sh", "-c", "python scripts/fetch_assets.py && uvicorn api.server:app --host 0.0.0.0 --port ${PORT:-8000}"]

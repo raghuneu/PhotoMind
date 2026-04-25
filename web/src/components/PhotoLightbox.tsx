@@ -51,7 +51,8 @@ export default function PhotoLightbox({ open, onClose, photoId, thumbnailUrl }: 
     setLoading(true)
     setError(null)
 
-    fetch(`/api/photos/${photoId}/image`)
+    const apiRoot = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+    fetch(`${apiRoot}/api/photos/${photoId}/image`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()

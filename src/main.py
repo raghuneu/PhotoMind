@@ -5,8 +5,8 @@ Usage:
     python -m src.main ingest              # Process photos into knowledge base
     python -m src.main query "question"    # Query the knowledge base
     python -m src.main eval                # Run default eval suite (20 queries)
-    python -m src.main eval --suite=expanded   # 56 queries
-    python -m src.main eval --suite=held_out   # 14 held-out from train split
+    python -m src.main eval --suite=expanded   # 83 queries
+    python -m src.main eval --suite=held_out   # 21 held-out from train split
     python -m src.main eval --suite=novel      # 15 novel intent-shift queries
 """
 

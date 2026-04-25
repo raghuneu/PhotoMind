@@ -116,7 +116,7 @@ Eval history is tracked in `eval/results/eval_history.json` for trend analysis.
 
 `eval/test_cases.py` has 20 hand-labeled test queries across 4 categories: factual (7), semantic (5), behavioral (4), edge cases (4). Edge cases have `should_decline: True` — the system should gracefully refuse rather than hallucinate.
 
-`eval/expanded_test_cases.py` adds 36 more queries (7 factual, 6 semantic, 6 behavioral, 6 edge cases, 11 ambiguous) for a total of 56 queries (`ALL_TEST_CASES`). The 11 ambiguous queries are critical for demonstrating RL value — they expose cases where keyword routing systematically fails.
+`eval/expanded_test_cases.py` adds 63 more queries (7 factual, 6 semantic, 6 behavioral, 6 edge cases, 11 ambiguous, plus 27 additional across categories) for a total of 83 queries (`ALL_TEST_CASES`). The 11 ambiguous queries are critical for demonstrating RL value — they expose cases where keyword routing systematically fails.
 
 `eval/novel_test_cases.py` adds 15 intent-shift queries that probe robustness to mid-sentence category switches. Run via `python -m src.main eval --suite=novel`.
 
