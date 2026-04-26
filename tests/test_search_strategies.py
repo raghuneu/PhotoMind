@@ -323,3 +323,75 @@ class TestScoreToGrade:
     ])
     def test_thresholds(self, tool, score, grade):
         assert tool._score_to_grade(score) == grade
+
+
+# ── Regression tests for P1/P3/P5/P6 fixes ──────────────────────────────
+
+class TestClassifyQueryFixes:
+    """P1: purchase-intent → factual. P6: behavioral aggregation."""
+
+    @pytest.mark.parametrize("q", [
+        "What did I buy at ALDI?",
+        "What did I purchase at Instacart?",
+        "receipt for eggs",
+        "show me what I bought yesterday",
+    ])
+    def test_purchase_intent_routes_factual(self, tool, q):
+        assert tool._classify_query(q) == "factual"
+
+    @pytest.mark.parametrize("q", [
+        "what cuisine do I eat most",
+        "what type of food do I buy",
+        "how frequently do I shop",
+        "do I tend to shop at ALDI",
+    ])
+    def test_expanded_behavioral_patterns(self, tool, q):
+        assert tool._classify_query(q) == "behavioral"
+
+
+class TestSemanticSearchFixes:
+    """P3 negative-entity guard, P5 single-noun entity/type expansion."""
+
+    def test_negative_entity_guard_suppresses_unrelated_receipts(
+        self, tool, synthetic_kb
+    ):
+        # Netflix is not a vendor in the KB, so all receipts should be
+        # suppressed by the P3 guard.
+        results = tool._semantic_search(
+            "Netflix subscription bill", synthetic_kb, top_k=5
+        )
+        for r in results:
+            if r["image_type"] == "receipt":
+                assert r["relevance_score"] < 0.35
+
+    def test_single_noun_entity_expansion_surfaces_match(
+        self, tool, synthetic_kb
+    ):
+        # "ALDI" is an entity value on p1 — P5 should surface it above floor.
+        results = tool._semantic_search("ALDI", synthetic_kb, top_k=5)
+        p1 = next((r for r in results if r["photo_id"] == "p1"), None)
+        assert p1 is not None
+        assert p1["relevance_score"] >= 0.35
+
+
+class TestFeedbackRewardShaping:
+    """P2: damped adjustments and missed-retrieval distinction."""
+
+    def test_missed_retrieval_does_not_tighten_threshold(self, tmp_path):
+        from src.tools.feedback_store import FeedbackStore
+        fs = FeedbackStore(path=str(tmp_path / "fb.json"))
+        # 5 failures, all with n_results=0 → classified as misses
+        for _ in range(5):
+            fs.record_outcome("q", "semantic", correct=False,
+                              confidence_score=0.0, n_results=0)
+        # Miss-rate >= 50% should LOOSEN (negative adjustment), not tighten.
+        assert fs.get_confidence_adjustment("semantic") <= 0.0
+
+    def test_false_positives_tighten_within_cap(self, tmp_path):
+        from src.tools.feedback_store import FeedbackStore
+        fs = FeedbackStore(path=str(tmp_path / "fb.json"))
+        for _ in range(10):
+            fs.record_outcome("q", "factual", correct=False,
+                              confidence_score=0.6, n_results=3)
+        adj = fs.get_confidence_adjustment("factual")
+        assert 0.0 < adj <= 0.10  # tightened but capped

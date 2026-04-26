@@ -219,6 +219,7 @@ class FeedbackRequest(BaseModel):
     strategy: str
     was_correct: bool
     confidence_score: float = 0.0
+    n_results: int | None = None
 
 
 # ── Routes: Query ────────────────────────────────────────────────────────
@@ -732,6 +733,7 @@ async def submit_feedback(req: FeedbackRequest, _=Depends(verify_api_key)):
         query_type=req.strategy,
         correct=req.was_correct,
         confidence_score=req.confidence_score,
+        n_results=req.n_results,
     )
     return {"status": "ok", "message": f"Feedback recorded for strategy '{req.strategy}'"}
 

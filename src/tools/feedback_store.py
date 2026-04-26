@@ -59,24 +59,44 @@ class FeedbackStore:
         with open(self.path, "w") as f:
             json.dump(self.data, f, indent=2)
 
-    def _update_stats(self, query_type: str, correct: bool):
-        """Update per-strategy accuracy stats and confidence adjustments."""
+    def _update_stats(self, query_type: str, correct: bool, n_results: int | None = None):
+        """Update per-strategy accuracy stats and confidence adjustments.
+
+        ``n_results`` lets the loop distinguish "missed retrieval" (no
+        results, harmful to raise the threshold further) from "wrong
+        retrieval" (results returned but judged incorrect — the classic
+        false-positive case the threshold should guard against).
+        """
         if query_type not in self.data["strategy_stats"]:
             self.data["strategy_stats"][query_type] = {"correct": 0, "total": 0}
         stats = self.data["strategy_stats"][query_type]
         stats["total"] += 1
         if correct:
             stats["correct"] += 1
+        # P2: track missed-retrieval events separately so we don't raise
+        # the threshold (which worsens miss rate) when the real problem
+        # is retrieval recall, not calibration.
+        if not correct and n_results is not None and n_results == 0:
+            stats["missed"] = stats.get("missed", 0) + 1
 
-        # Recompute adaptive confidence adjustment for this strategy
+        # Recompute adaptive confidence adjustment for this strategy.
+        # P2: damp the swing to +/-0.03 and cap cumulative drift so a
+        # bad run can't permanently push the threshold above 0.5.
         if stats["total"] >= 3:
             accuracy = stats["correct"] / stats["total"]
-            if accuracy < 0.7:
-                self.data["confidence_adjustments"][query_type] = 0.05
+            miss_rate = stats.get("missed", 0) / stats["total"]
+            current = self.data["confidence_adjustments"].get(query_type, 0.0)
+            if accuracy < 0.7 and miss_rate < 0.5:
+                # Only tighten when failures are false-positives, not misses.
+                new_adj = min(current + 0.03, 0.10)
             elif accuracy >= 0.9:
-                self.data["confidence_adjustments"][query_type] = -0.05
+                new_adj = max(current - 0.03, -0.10)
+            elif miss_rate >= 0.5:
+                # Predominantly missed retrievals — loosen to improve recall.
+                new_adj = max(current - 0.03, -0.10)
             else:
-                self.data["confidence_adjustments"][query_type] = 0.0
+                new_adj = current  # avoid churn in the 70–90% band
+            self.data["confidence_adjustments"][query_type] = round(new_adj, 3)
 
     def record_outcome(
         self,
@@ -84,6 +104,7 @@ class FeedbackStore:
         query_type: str,
         correct: bool,
         confidence_score: float,
+        n_results: int | None = None,
     ):
         """Record a query outcome for feedback learning."""
         self.data["history"].append({
@@ -91,10 +112,11 @@ class FeedbackStore:
             "query_type": query_type,
             "correct": correct,
             "confidence_score": confidence_score,
+            "n_results": n_results,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-        self._update_stats(query_type, correct)
+        self._update_stats(query_type, correct, n_results)
         self._save()
 
     def get_confidence_adjustment(self, query_type: str) -> float:
@@ -124,6 +146,7 @@ class FeedbackStore:
         dqn_action: int | None = None,
         bandit_reward: float | None = None,
         dqn_reward: float | None = None,
+        n_results: int | None = None,
     ):
         """Record a query outcome with RL-specific fields."""
         self.data["history"].append({
@@ -135,10 +158,11 @@ class FeedbackStore:
             "dqn_action": dqn_action,
             "bandit_reward": bandit_reward,
             "dqn_reward": dqn_reward,
+            "n_results": n_results,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-        self._update_stats(query_type, correct)
+        self._update_stats(query_type, correct, n_results)
         self._save()
 
     def get_summary(self) -> dict:
