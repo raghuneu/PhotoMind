@@ -7,11 +7,13 @@ sdk: docker
 app_port: 7860
 ---
 
+<div align="center">
+
 # PhotoMind
 
 **Multimodal Personal Photo Knowledge Retrieval System**
 
-<h3><a href="https://photomind.vercel.app/">https://photomind.vercel.app</a></h3>
+### [photomind.vercel.app](https://photomind.vercel.app/)
 
 [![Python](https://img.shields.io/badge/Python-3.10–3.13-3776AB?style=flat-square&logo=python&logoColor=white)](#)
 [![CrewAI](https://img.shields.io/badge/CrewAI-Agents-FF6F00?style=flat-square)](#)
@@ -21,9 +23,9 @@ app_port: 7860
 [![React](https://img.shields.io/badge/React-Frontend-61DAFB?style=flat-square&logo=react&logoColor=black)](#)
 [![RL](https://img.shields.io/badge/RL-DQN_+_Bandits-8B5CF6?style=flat-square)](#)
 
-_Built for INFO 7375 -- Prompt Engineering for Generative AI (Northeastern University, Spring 2026)_
+_Built for INFO 7375 — Prompt Engineering for Generative AI (Northeastern University, Spring 2026)_
 
-**Raghu Ram Shanta Rajamani** -- [shantharajamani.r@northeastern.edu](mailto:shantharajamani.r@northeastern.edu)
+**Raghu Ram Shanta Rajamani** — [shantharajamani.r@northeastern.edu](mailto:shantharajamani.r@northeastern.edu)
 
 [What It Does](#what-it-does) · [The Stack](#the-stack) · [Architecture](#architecture) · [Setup](#setup) · [Usage](#usage) · [RL Extension](#reinforcement-learning-extension) · [Evaluation Results](#evaluation-results) · [Project Structure](#project-structure)
 
@@ -37,13 +39,9 @@ _Built for INFO 7375 -- Prompt Engineering for Generative AI (Northeastern Unive
 > | Take-Home Final: Reinforcement Learning for Agentic AI Systems | [`feature/reinforcement-learning-extension`](https://github.com/raghuneu/PhotoMind/tree/feature/reinforcement-learning-extension)       |
 > | Building Agentic Systems Assignment                            | [`feature/building_agentic_systems_assignment`](https://github.com/raghuneu/PhotoMind/tree/feature/building_agentic_systems_assignment) |
 
-<div align="center">
-
 You took a photo of a grocery receipt last Tuesday. Now you need to know exactly what you spent. You could scroll through 500 photos, or you could just ask.
 
-PhotoMind turns your phone's photo library into a queryable knowledge base. It analyzes photos with GPT-4o Vision, indexes them into a hybrid vector search engine, and answers natural-language questions with confidence scores and source attribution. Two RL components -- contextual bandits for query routing and a DQN for confidence calibration -- eliminate silent failures entirely.
-
-</div>
+PhotoMind turns your phone's photo library into a queryable knowledge base. It analyzes photos with GPT-4o Vision, indexes them into a hybrid vector search engine, and answers natural-language questions with confidence scores and source attribution. Two RL components — contextual bandits for query routing and a DQN for confidence calibration — target silent failures (confident-but-wrong answers).
 
 <p align="center">
   <a href="https://youtu.be/XMeceeWHjCE">
@@ -57,7 +55,7 @@ PhotoMind turns your phone's photo library into a queryable knowledge base. It a
 
 ---
 
-<h2 align="center">What It Does</h2>
+## What It Does
 
 | Step              | What Happens                                                   | Details                                                                                     |
 | ----------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -77,36 +75,36 @@ Every answer includes a confidence grade (A–F) and cites the specific source p
 
 ---
 
-<h2 align="center">The Stack</h2>
+## The Stack
 
-<h3 align="center">AI / Models</h3>
+**AI / Models**
 
-- **GPT-4o Vision** -- Photo analysis, OCR, entity extraction, classification
-- **CrewAI** -- Multi-agent orchestration (4 agents, 2 crews)
-- **sentence-transformers** -- `all-MiniLM-L6-v2` for local embeddings (384-dim)
-- **PyTorch** -- DQN confidence calibrator
-- **scikit-learn** -- KMeans clustering for bandit context features
+- **GPT-4o Vision** — photo analysis, OCR, entity extraction, classification
+- **CrewAI** — multi-agent orchestration (4 agents, 2 crews)
+- **sentence-transformers** — `all-MiniLM-L6-v2` for local embeddings (384-dim)
+- **PyTorch** — DQN confidence calibrator
+- **scikit-learn** — KMeans clustering for bandit context features
 
-<h3 align="center">Search & Storage</h3>
+**Search & Storage**
 
-- **Qdrant** -- Vector database with hybrid search (dense ANN + keyword via RRF)
-- **JSON fallback** -- Flat file backend for offline/RL training
-- **Repository pattern** -- Swappable backends via ABC
+- **Qdrant** — vector database with hybrid search (dense ANN + keyword via RRF)
+- **JSON** — flat-file backend (default; also used for offline RL training)
+- **Repository pattern** — swappable backends via ABC
 
-<h3 align="center">Backend & API</h3>
+**Backend & API**
 
-- **FastAPI** -- REST API with LRU cache, API key auth, SSE streaming, multi-user scoping
-- **Pydantic** -- Settings management, input validation
+- **FastAPI** — REST API with LRU cache, API key auth, SSE streaming, multi-user scoping
+- **Pydantic** — settings management, input validation
 
-<h3 align="center">Frontend</h3>
+**Frontend**
 
-- **React** + **TypeScript** + **Vite** -- SPA frontend
-- **MUI** (Material UI) -- Component library
-- **Recharts** -- Data visualization
+- **React** + **TypeScript** + **Vite** — SPA frontend
+- **MUI** (Material UI) — component library
+- **Recharts** — data visualization
 
 ---
 
-<h2 align="center">Architecture</h2>
+## Architecture
 
 <p align="center">
   <img src="docs/mermaid_diagrams/high_level_architecture.png" alt="High-Level Architecture" width="90%"/>
@@ -123,9 +121,9 @@ QUERY CREW (Process.hierarchical, manager-delegated)
     ├── Task 1: Knowledge Retriever — searches KB with PhotoKnowledgeBaseTool
     └── Task 2: Insight Synthesizer — synthesizes answer with confidence grade + citation
 
-STORAGE LAYER (Repository Pattern)
-  ├── QdrantPhotoRepository (default) — vector DB with hybrid search (RRF)
-  └── JsonPhotoRepository (fallback)  — flat JSON file for offline/RL training
+STORAGE LAYER (Repository Pattern, selected by REPOSITORY_BACKEND)
+  ├── JsonPhotoRepository (default)  — flat JSON file, also used for offline/RL training
+  └── QdrantPhotoRepository          — vector DB with hybrid search (RRF)
 
 API SERVER (FastAPI)
   uvicorn api.server:app — REST API with LRU cache, API key auth, multi-user scoping
@@ -134,7 +132,7 @@ FEEDBACK LOOP (persistent, adaptive)
   [Eval results] → [FeedbackStore] → adjusts confidence thresholds per strategy
 ```
 
-<h3 align="center">Agents</h3>
+### Agents
 
 | Agent                   | Role                                                                        | Tools                                         |
 | ----------------------- | --------------------------------------------------------------------------- | --------------------------------------------- |
@@ -143,7 +141,7 @@ FEEDBACK LOOP (persistent, adaptive)
 | **Knowledge Retriever** | Searches knowledge base; retrieves evidence                                 | PhotoKnowledgeBaseTool (custom), FileReadTool |
 | **Insight Synthesizer** | Synthesizes grounded answers with confidence grading                        | FileReadTool, SerperDevTool (optional)        |
 
-<h3 align="center">Tools</h3>
+### Tools
 
 | Tool                     | Type                | Purpose                                                                           |
 | ------------------------ | ------------------- | --------------------------------------------------------------------------------- |
@@ -156,13 +154,13 @@ FEEDBACK LOOP (persistent, adaptive)
 
 ---
 
-<h2 align="center">Setup</h2>
+## Setup
 
 ### Prerequisites
 
 - Python 3.10–3.13 (CrewAI requires `< 3.14`)
 - OpenAI API key (GPT-4o access)
-- Docker (for Qdrant vector DB — optional, falls back to JSON)
+- Docker (optional — only needed for the Qdrant backend)
 
 ### 1. Create a virtual environment
 
@@ -199,6 +197,7 @@ cp .env.example .env
 
 - `SERPER_API_KEY` — enables web search enrichment in answers
 - `REPOSITORY_BACKEND` — `json` (default) or `qdrant` for vector DB
+- `API_KEY` — if set, POST endpoints on the API server require an `X-API-Key` header
 
 ### 4. Create directories and add photos
 
@@ -213,17 +212,17 @@ Place 15–25 photos in `photos/`. iPhone photos (HEIC format) are fully support
 - Screenshots from apps or websites (1–2)
 - Documents or notes (1–2)
 
-### 5. Start Qdrant (vector database)
+### 5. Start Qdrant (optional)
 
 ```bash
 docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```
 
-Qdrant runs as a local Docker container. The ingestion pipeline auto-creates the `photos` collection on first write. If Qdrant is unavailable, the system falls back to the JSON file backend automatically.
+Set `REPOSITORY_BACKEND=qdrant` in `.env` to use it. The ingestion pipeline auto-creates the `photos` collection on first write. If Qdrant is unavailable, the system falls back to the JSON backend automatically.
 
 ---
 
-<h2 align="center">Usage</h2>
+## Usage
 
 ### Ingest photos
 
@@ -235,7 +234,7 @@ python -m src.main ingest
 python -m src.main ingest --direct
 ```
 
-Analyzes all photos in `photos/` using GPT-4o Vision and dual-writes to `knowledge_base/photo_index.json` and Qdrant. Idempotent — re-running skips already-indexed photos.
+Analyzes all photos in `photos/` using GPT-4o Vision and writes them to `knowledge_base/photo_index.json` (and Qdrant, when enabled). Idempotent — re-running skips already-indexed photos.
 
 ### Query the knowledge base
 
@@ -260,17 +259,27 @@ The FastAPI server exposes the knowledge base and RL models as a REST API. Two q
 - **Fast** (`mode: "fast"`) — direct Python search with RL routing, no OpenAI calls, <1s, free
 - **Full** (`mode: "full"`) — CrewAI pipeline with GPT-4o reasoning, 15–45s, ~$0.01–0.05/query
 
-<h3 align="center">API Endpoints</h3>
+#### API Endpoints
 
-| Endpoint              | Method | Auth    | Description                                                                                            |
-| --------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------ |
-| `/api/query`          | POST   | API key | Query the knowledge base                                                                               |
-| `/api/query/stream`   | POST   | API key | SSE streaming variant — emits `routing`/`retrieval`/`token`/`done` events for progressive UI rendering |
-| `/api/knowledge-base` | GET    | —       | List all indexed photos                                                                                |
-| `/api/health`         | GET    | —       | Health check with backend status                                                                       |
-| `/api/cache/clear`    | POST   | API key | Clear the LRU query cache                                                                              |
-| `/api/feedback`       | POST   | API key | Submit feedback for adaptive thresholds                                                                |
-| `/api/eval/results`   | GET    | —       | Latest evaluation results                                                                              |
+| Endpoint                          | Method | Auth    | Description                                                                                            |
+| --------------------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------ |
+| `/api/query`                      | POST   | API key | Query the knowledge base                                                                               |
+| `/api/query/stream`               | POST   | API key | SSE streaming variant — emits `routing`/`retrieval`/`token`/`done` events for progressive UI rendering |
+| `/api/feedback`                   | POST   | API key | Submit feedback for adaptive thresholds                                                                |
+| `/api/cache/clear`                | POST   | API key | Clear the LRU query cache                                                                              |
+| `/api/knowledge-base`             | GET    | —       | List all indexed photos                                                                                |
+| `/api/knowledge-base/stats`       | GET    | —       | Knowledge base statistics                                                                              |
+| `/api/photos/{photo_id}/thumbnail`| GET    | —       | Photo thumbnail                                                                                        |
+| `/api/photos/{photo_id}/image`    | GET    | —       | Full-size photo                                                                                        |
+| `/api/feedback/stats`             | GET    | —       | Per-strategy feedback statistics                                                                       |
+| `/api/eval/results`               | GET    | —       | Latest evaluation results                                                                              |
+| `/api/eval/ablation`              | GET    | —       | Ablation study results                                                                                 |
+| `/api/eval/rl-training`           | GET    | —       | RL training results                                                                                    |
+| `/api/eval/rl-eval`               | GET    | —       | RL evaluation results                                                                                  |
+| `/api/figures`                    | GET    | —       | List generated figures                                                                                 |
+| `/api/figures/{filename}`         | GET    | —       | Fetch a figure                                                                                         |
+| `/api/system/architecture`        | GET    | —       | System architecture metadata                                                                           |
+| `/api/health`                     | GET    | —       | Health check with backend status                                                                       |
 
 **Headers:**
 
@@ -288,10 +297,13 @@ curl -X POST http://localhost:8000/api/query \
 ### Run the evaluation suite
 
 ```bash
-python -m src.main eval
+python -m src.main eval                    # 20 original queries
+python -m src.main eval --suite=expanded   # 83 queries
+python -m src.main eval --suite=held_out   # 21 held-out queries
+python -m src.main eval --suite=novel      # 15 intent-shift queries
 ```
 
-Runs 20 test queries across 4 categories and reports:
+Reports:
 
 - Retrieval Accuracy — was the correct source photo found?
 - Routing Accuracy — was the query intent correctly detected?
@@ -309,7 +321,7 @@ python -m src.main train
 # Train with custom episode count
 python -m src.main train 1000
 
-# Run full RL evaluation: 5 configs x 5 seeds x 83 queries
+# Run full RL evaluation: 5 configs × 5 seeds × 83 queries
 python -m src.main rl-eval
 
 # Run 7-config ablation study → eval/results/ablation_results.json
@@ -320,21 +332,21 @@ RL training runs entirely on the cached knowledge base (zero API cost). Requires
 
 ---
 
-<h2 align="center">Reinforcement Learning Extension</h2>
+## Reinforcement Learning Extension
 
-PhotoMind integrates two RL approaches that replace rule-based components:
+PhotoMind integrates two RL approaches that replace rule-based components.
 
-<h3 align="center">Approach 1: Contextual Bandits — Query Routing</h3>
+### Approach 1: Contextual Bandits — Query Routing
 
-Replaces the keyword-based `_classify_query()` in `PhotoKnowledgeBaseTool` with a learned policy that selects the optimal search strategy (factual / semantic / behavioral) based on query features.
+Replaces the keyword-based `_classify_query()` in `PhotoKnowledgeBaseTool` with a learned policy that selects the search strategy (factual / semantic / behavioral) based on query features.
 
-- **ThompsonSamplingBandit** — Beta posterior per context cluster, provably optimal exploration
+- **ThompsonSamplingBandit** — Beta posterior per context cluster
 - **UCBBandit** — UCB1 upper confidence bound per cluster
-- **EpsilonGreedyBandit** — Baseline comparison
+- **EpsilonGreedyBandit** — baseline comparison
 - Context clustering via KMeans on 396-dimensional hybrid query feature vectors (12 handcrafted + 384 MiniLM embedding dims)
 - Training: 4000 episodes × 5 seeds on offline cached search results (zero API cost)
 
-<h3 align="center">Approach 2: DQN — Confidence Calibration</h3>
+### Approach 2: DQN — Confidence Calibration
 
 Replaces static confidence thresholding with a DQN that learns when to accept, hedge, or decline retrieval results — directly addressing the silent failure problem.
 
@@ -343,9 +355,9 @@ Replaces static confidence thresholding with a DQN that learns when to accept, h
 - Actions: `accept_high`, `accept_moderate`, `hedge`, `requery`, `decline`
 - Reward: penalty matrix that heavily penalizes silent failures (confident-but-wrong answers)
 
-Key result: **Full RL eliminates silent failures** (0.0% vs 1.8% baseline; p < 0.0001). See [Evaluation Results](#evaluation-results) for the full ablation table.
+Key result: **every RL config lowers the silent failure rate** relative to the rule-based baseline (4.8% → 0.2–3.4%). See [Evaluation Results](#evaluation-results).
 
-<h3 align="center">RL Architecture</h3>
+### RL Architecture
 
 <p align="center">
   <img src="docs/mermaid_diagrams/system_Architecture_with_RL.png" alt="System Architecture with RL" width="90%"/>
@@ -355,7 +367,7 @@ Key result: **Full RL eliminates silent failures** (0.0% vs 1.8% baseline; p < 0
 
 ---
 
-<h2 align="center">Custom Tool: PhotoKnowledgeBaseTool</h2>
+## Custom Tool: PhotoKnowledgeBaseTool
 
 `src/tools/photo_knowledge_base.py` — the core differentiator.
 
@@ -364,7 +376,7 @@ Key result: **Full RL eliminates silent failures** (0.0% vs 1.8% baseline; p < 0
 | Strategy       | Trigger Keywords                                    | How It Works                                                    |
 | -------------- | --------------------------------------------------- | --------------------------------------------------------------- |
 | **Factual**    | "how much", "date", "address", "items", "vendor"    | Entity matching + OCR text search                               |
-| **Semantic**   | Default (no other match)                            | Keyword overlap on descriptions, normalized by meaningful words |
+| **Semantic**   | Visual/descriptive words, or no other match         | Keyword overlap on descriptions, normalized by meaningful words |
 | **Behavioral** | "most", "often", "how many", "breakdown", "pattern" | Frequency aggregation across all photos                         |
 
 **Output always includes:** confidence grade (A–F), numeric score (0–1), source photo filenames, and a plain-language summary.
@@ -372,36 +384,39 @@ Key result: **Full RL eliminates silent failures** (0.0% vs 1.8% baseline; p < 0
 **Input schema (Pydantic):**
 
 ```python
-query: str               # Natural language question
-query_type: str = "auto" # Force strategy or let tool classify
-top_k: int = 3           # Number of results
-confidence_threshold: float = 0.15  # Minimum score to include
+query: str                          # Natural language question
+query_type: str = "auto"            # Force strategy or let tool classify
+top_k: int = 3                      # Number of results
+confidence_threshold: float = 0.25  # Minimum score to include
 ```
 
 ---
 
-<h2 align="center">Evaluation Results</h2>
+## Evaluation Results
 
-<h3 align="center">Base System (53 photos, 20 queries — with Qdrant hybrid search)</h3>
+### Base System (53 photos, 20 queries)
+
+Latest `python -m src.main eval` run (JSON backend, CrewAI pipeline):
 
 | Metric              | Score      |
 | ------------------- | ---------- |
-| Retrieval Accuracy  | **100%**   |
-| Routing Accuracy    | **85%**    |
-| Silent Failure Rate | **0%**     |
+| Retrieval Accuracy  | **90%**    |
+| Routing Accuracy    | **95%**    |
+| Silent Failure Rate | **5%**     |
 | Decline Accuracy    | **100%**   |
-| Avg Latency         | ~46s/query |
+| Avg Latency         | ~37s/query |
 
-<h3 align="center">RL Extension (53 photos, 83 queries, 5 seeds)</h3>
+### RL Extension (53 photos, 83 queries, 5 seeds)
 
-| Config                 | Retrieval | Routing | Silent Fail | Decline Acc |
-| ---------------------- | --------- | ------- | ----------- | ----------- |
-| Baseline (rule-based)  | 87.5%     | 76.8%   | 1.8%        | 90.9%       |
-| Bandit Only (Thompson) | 86.8%     | 66.4%   | **0.0%**    | 81.8%       |
-| DQN Only               | 87.5%     | 76.8%   | **0.4%**    | **100.0%**  |
-| Full RL (Thompson+DQN) | 87.5%     | 67.1%   | **0.0%**    | **98.2%**   |
+From `eval/results/rl_eval_results.json` (mean over 5 seeds; baseline is deterministic):
 
-<p align="center">Statistical tests (Full RL vs Baseline): silent failure p < 0.0001 (***), decline accuracy p = 0.016 (*)</p>
+| Config                 | Retrieval | Routing   | Silent Fail | Decline Acc |
+| ---------------------- | --------- | --------- | ----------- | ----------- |
+| Baseline (rule-based)  | 85.5%     | **75.9%** | 4.8%        | **92.9%**   |
+| Bandit Only (Thompson) | **90.1%** | 65.8%     | **0.2%**    | 91.4%       |
+| DQN Only               | 85.5%     | **75.9%** | 3.4%        | 84.3%       |
+| Full RL (Thompson+DQN) | 89.6%     | 66.5%     | 1.7%        | 90.0%       |
+| Recommended (Rule+DQN) | 85.5%     | **75.9%** | 3.4%        | 84.3%       |
 
 <p align="center">
   <img src="docs/figures/ablation_comparison.png" alt="Ablation Study Comparison" width="90%"/>
@@ -409,7 +424,7 @@ confidence_threshold: float = 0.15  # Minimum score to include
 
 ---
 
-<h2 align="center">Project Structure</h2>
+## Project Structure
 
 ```
 PhotoMind/
@@ -430,6 +445,7 @@ PhotoMind/
 │   ├── tools/
 │   │   ├── photo_vision.py          # PhotoVisionTool (GPT-4o Vision + HEIC)
 │   │   ├── photo_knowledge_base.py  # PhotoKnowledgeBaseTool (custom) — RL-enhanced
+│   │   ├── embedding_index.py       # Local embedding index (MiniLM)
 │   │   ├── query_memory.py          # Query memory and deduplication
 │   │   └── feedback_store.py        # FeedbackStore (adaptive threshold learning)
 │   ├── storage/
@@ -453,10 +469,14 @@ PhotoMind/
 │   ├── run_rl_evaluation.py         # RL 5-config comparison harness
 │   ├── ablation.py                  # 7-config ablation with paired t-tests
 │   ├── statistical_analysis.py      # CI, paired t-test, Cohen's d utilities
+│   ├── run_e2e_production.py        # E2E tests (factual + edge) against the deployed API
+│   ├── e2e_behavioral_novel.py      # E2E tests (behavioral + novel) against the deployed API
+│   ├── run_browser_sweep.py         # 75-query sweep against the deployed API
+│   ├── submit_feedback.py           # Submit judge-labeled feedback to the deployed API
 │   └── results/                     # JSON results + eval history
 ├── viz/
 │   ├── plot_learning_curves.py      # Bandit regret, DQN rewards, posteriors, epsilon decay
-│   ├── plot_ablation.py             # Grouped bar chart (7 configs x 4 metrics)
+│   ├── plot_ablation.py             # Grouped bar chart (7 configs × 4 metrics)
 │   ├── plot_regret.py               # Cumulative regret comparison (3 bandit types)
 │   ├── plot_before_after.py         # Before/after RL comparison plots
 │   ├── generate_diagrams.py         # Architecture and flow diagrams
@@ -469,15 +489,17 @@ PhotoMind/
 │   ├── precompute_cache.py          # Pre-compute search strategy cache
 │   ├── scaling_benchmark.py         # Scaling and performance benchmarks
 │   ├── migrate_to_qdrant.py         # JSON → Qdrant migration utility
+│   ├── fetch_assets.py              # Fetch photos + KB from R2 at container start
 │   └── demo_comparison.py           # Rule-based vs RL before/after demo
 ├── knowledge_base/
 │   ├── photo_index.json             # 53 indexed photos
+│   ├── feedback_store.json          # Persistent feedback-loop state
 │   └── rl_models/                   # Trained RL models
 │       ├── bandit_thompson.pkl      # Trained Thompson Sampling bandit
 │       └── dqn_confidence.pth       # Trained DQN confidence calibrator
 ├── tests/
 │   ├── test_core.py                 # Core RL functionality tests (59 tests)
-│   ├── test_search_strategies.py    # Search strategy correctness tests (18 tests)
+│   ├── test_search_strategies.py    # Search strategy correctness tests (24 tests)
 │   └── test_repository.py           # Repository abstraction tests (13 tests)
 ├── web/                             # React + TypeScript + Vite frontend (MUI, Recharts)
 │   ├── src/
@@ -487,29 +509,26 @@ PhotoMind/
 │   ├── index.html
 │   └── package.json
 ├── docs/
+│   ├── index.html                   # GitHub Pages site
 │   ├── figures/                     # Copied figures for GitHub Pages
 │   ├── math_formulations.md         # Mathematical formulations for RL components
-│   ├── mermaid_diagrams/            # Mermaid diagram sources
+│   ├── mermaid_diagrams/            # Rendered architecture diagrams (PNG)
 │   └── report/                      # LaTeX technical report (main.tex → main.pdf)
 ├── Dockerfile                       # Multi-stage build (Node frontend + Python backend)
+├── Dockerfile.render                # Render deployment variant
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
 ├── requirements.txt
-└── TECHNICAL_REPORT.md              # Full technical documentation (base system + RL extension)
+├── TECHNICAL_REPORT.md              # Full technical documentation (base system + RL extension)
+└── TECHNICAL_REPORT.pdf
 ```
 
 ---
-
-<div align="center">
 
 ## License
 
 MIT License
 
----
-
 _This is an academic project demonstrating multimodal AI retrieval with reinforcement learning. Not intended for production use._
-
-</div>
