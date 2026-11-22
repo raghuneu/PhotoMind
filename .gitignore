@@ -226,3 +226,6 @@ web/node_modules/
 web/dist/
 
 knowledge_base/embeddings.npz
+
+# Internal course/planning docs (not for publication)
+docs/Internaldocs/

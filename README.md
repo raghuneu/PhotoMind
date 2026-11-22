@@ -1,3 +1,12 @@
+---
+title: PhotoMind
+emoji: 📸
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+---
+
 # PhotoMind
 
 **Multimodal Personal Photo Knowledge Retrieval System**
